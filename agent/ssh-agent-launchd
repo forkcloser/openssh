@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# Start this package's ssh-agent on ~/.ssh/agent.sock, foreground, for the
+# LaunchAgent (which restarts it) or a shell. Writes ~/.posh_ssh, which exports
+# SSH_AUTH_SOCK for the shells that source it.
+#
+# The agent is the one beside this script, in the package's bin, found through
+# the script's real path, never through PATH: launchd gives the system's.
+
+set -euo pipefail
+
+self="$(cd "$(dirname "$(readlink -f "$0")")" && pwd -P)"
+agent="${self}/../bin/ssh-agent"
+[ -x "${agent}" ] || { echo "ssh-agent-launchd: no ssh-agent at ${agent}" >&2; exit 1; }
+
+socket="${HOME}/.ssh/agent.sock"
+mkdir -p "${HOME}/.ssh"
+chmod 0700 "${HOME}/.ssh"
+
+if pgrep -f -- "-a ${socket}" > /dev/null; then
+  echo "ssh-agent-launchd: an agent is already running on ${socket}" >&2
+  exit 1
+fi
+
+# A socket file left by an earlier run; never the directory the system agent
+# keeps at ~/.ssh/agent.
+rm -f "${socket}"
+[ ! -S "${HOME}/.ssh/agent" ] || rm -f "${HOME}/.ssh/agent"
+
+# shellcheck disable=SC2016 # the line is for the shell that sources it: $HOME expands there, not here
+printf 'export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"\n' > "${HOME}/.posh_ssh"
+
+exec "${agent}" -D -a "${socket}"

@@ -6,23 +6,17 @@ import '.limen/just/main.just'
 lint: do::lint::default
 fix: do::fix::default
 
-# brew is hidden by the hermetic PATH on purpose; main.just captures it as
-# BREW_BIN.
+# Build the package (macOS arm64 only): every source from pins.yaml, verified
+# by digest; the result is build/dist/openssh_<version>_darwin_arm64.tar.gz.
+# PACKAGE_VERSION=10.6.1.2 names a rebuild; the default is the pinned OpenSSH
+# version with its portable level as the third segment.
+build:
+    ./build.sh
 
-# Run test.sh (installs and starts the agent for real; macOS only, no-op elsewhere).
+# Smoke-test the built package, relocated to a temp dir: version, security
+# keys, the shipped config, scp's ssh, the agent through its launch script.
 test:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ "$(uname -s)" != 'Darwin' ]; then
-        echo "ssh-agent is macOS-only — nothing to test on this platform (skipped, not failed)."
-        exit 0
-    fi
-    # install.sh uses brew when there is one (its prefix, its openssh) and does
-    # without otherwise. Appended, not prepended: the tools test.sh lints with
-    # must stay aqua's, not whatever Homebrew happens to have installed.
-    # shellcheck disable=SC2154 # BREW_BIN is exported by the canonical .justfile (main.just).
-    if [ -n "${BREW_BIN:-}" ]; then PATH="$PATH:$(dirname "$BREW_BIN")"; fi
-    ./test.sh
+    ./test-binary.sh
 
 # --- added by limen fix: the recipe the security workflow runs ---
 security: do::security::default

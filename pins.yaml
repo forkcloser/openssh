@@ -1,0 +1,48 @@
+# The sources this repository builds, pinned by version and digest
+# (book/tooling.md, "Pinned artifacts beyond aqua"). build.sh reads each entry
+# back with `limen pins get <name> url|sha256` and verifies the download
+# against the digest before unpacking it; Renovate proposes the bumps from the
+# renovate: lines, and `limen pins refresh` recomputes a digest a bump left
+# behind. None of these projects signs its archives in a form limen verifies,
+# so the method is the download itself: TLS at refresh time, the digest at
+# every build after.
+#
+# OpenSSH portable is published on OpenBSD's CDN, not on GitHub: its entry
+# watches the directory index (the custom.openssh datasource in renovate.json)
+# and reads the version out of the archive names it lists.
+pins:
+  - name: openssh
+    renovate: custom.openssh openssh
+    extract-version: ^openssh-(?<version>\d+\.\d+p\d+)\.tar\.gz$
+    versioning: regex:^(?<major>\d+)\.(?<minor>\d+)p(?<patch>\d+)$
+    version: 10.6p1
+    url: https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-${version}.tar.gz
+    verify: download
+    digest:
+      version: 10.6p1
+      sha256: a9dc9565dffe8640f64d863cd29a32bc4a3dbdec0566a7fc44c5d6ee767d5f39
+  - name: libfido2
+    renovate: github-tags Yubico/libfido2
+    version: 1.17.0
+    url: https://github.com/Yubico/libfido2/archive/refs/tags/${version}.tar.gz
+    verify: download
+    digest:
+      version: 1.17.0
+      sha256: ace062d14a482ff9325410ff63d06c8b5fe87e79ebc18dda07add2bc0188c77f
+  - name: libcbor
+    renovate: github-tags PJK/libcbor
+    version: v0.14.0
+    url: https://github.com/PJK/libcbor/archive/refs/tags/${version}.tar.gz
+    verify: download
+    digest:
+      version: v0.14.0
+      sha256: a8c1516e741562cf95aa4479c64916c3d4d2623e24fdc35e414e2320e7300aae
+  - name: libressl
+    renovate: github-releases libressl/portable
+    extract-version: ^v(?<version>\d+\.\d+\.\d+)$
+    version: 4.3.3
+    url: https://github.com/libressl/portable/releases/download/v${version}/libressl-${version}.tar.gz
+    verify: download
+    digest:
+      version: 4.3.3
+      sha256: ff97c432457f349e6ba3d416ab903bc7468f1436f0f32efe5fff808de292c7b8
