@@ -1,6 +1,31 @@
 {
   "checksums": [
     {
+      "id": "github_release/github.com/Kitware/CMake/v4.4.4/cmake-4.4.4-linux-aarch64.tar.gz",
+      "checksum": "A1B6CC63636A0E55C63257CF3315A8A5F129E42FADE25DB1AFEA4FF8AB06F25E",
+      "algorithm": "sha256"
+    },
+    {
+      "id": "github_release/github.com/Kitware/CMake/v4.4.4/cmake-4.4.4-linux-x86_64.tar.gz",
+      "checksum": "E5BB807F7728CB60CD8B27EBC97A2EDB469B68655F21E844A600C3575B76F5BB",
+      "algorithm": "sha256"
+    },
+    {
+      "id": "github_release/github.com/Kitware/CMake/v4.4.4/cmake-4.4.4-macos-universal.tar.gz",
+      "checksum": "4B7B73704B1DB9B374E5C9AB8E17AC6148B817B6396EE75CD94A852CBAC9D305",
+      "algorithm": "sha256"
+    },
+    {
+      "id": "github_release/github.com/Kitware/CMake/v4.4.4/cmake-4.4.4-windows-arm64.zip",
+      "checksum": "ED673BBC4EB7C1E59B0407FD52F1680FC0AE3229A46B9B7B3EA9133764F07F67",
+      "algorithm": "sha256"
+    },
+    {
+      "id": "github_release/github.com/Kitware/CMake/v4.4.4/cmake-4.4.4-windows-x86_64.zip",
+      "checksum": "BACE36E94B31C68AB6FA295F26DFA11219E0701CF7C94B0284A7D1CB13DAC536",
+      "algorithm": "sha256"
+    },
+    {
       "id": "github_release/github.com/casey/just/1.58.0/just-1.58.0-aarch64-apple-darwin.tar.gz",
       "checksum": "50AE3E996C974A0BF32EA7D10F495070DF33F1B43E0616B2769E3D4821ED8F48",
       "algorithm": "sha256"
