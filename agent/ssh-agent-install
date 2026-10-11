@@ -2,7 +2,9 @@
 #
 # Install this package's ssh-agent as a user LaunchAgent: writes
 # ~/Library/LaunchAgents/org.forkcloser.ssh_agent.plist pointing at the
-# launch script, bootstraps it, and retires Apple's agent for the next login.
+# launch script, bootstraps it, and puts the SSH_AUTH_SOCK export into the
+# shell rc when it is not there. Apple's agent is left alone: it listens on
+# its own socket and nothing reaches it once SSH_AUTH_SOCK is ours.
 #
 # The plist names the launch script by this package's own path: launchd
 # starts it with HOME and the system PATH only, where a tool manager's proxy
@@ -10,7 +12,7 @@
 # directory, run this again.
 #
 #   ssh-agent-install            install and start
-#   ssh-agent-install uninstall  stop and remove, re-enable Apple's agent
+#   ssh-agent-install uninstall  stop and remove
 
 set -euo pipefail
 
@@ -18,12 +20,39 @@ label='org.forkcloser.ssh_agent'
 plist="${HOME}/Library/LaunchAgents/${label}.plist"
 logs="${HOME}/Library/Logs/org.forkcloser.ssh_agent"
 domain="gui/$(id -u)"
+# The export as it goes into the rc, unexpanded: the rc keeps tracking $HOME.
+# shellcheck disable=SC2016 # the line is for the shell that reads it
+rc_line='export SSH_AUTH_SOCK="$HOME/.ssh/org.forkcloser.agent.sock"'
+rc_mark='# forkcloser/openssh: the agent the LaunchAgent runs'
+
+# The rc of the login shell, as limen-install picks it.
+shell_rc() {
+  case "${SHELL:-}" in
+    */zsh | zsh) echo "${HOME}/.zshrc" ;;
+    */bash | bash) echo "${HOME}/.bashrc" ;;
+    *) echo "${HOME}/.profile" ;;
+  esac
+}
 
 if [ "${1:-}" = 'uninstall' ]; then
   launchctl bootout "${domain}/${label}" 2> /dev/null || true
   rm -f "${plist}"
-  launchctl enable "${domain}/com.openssh.ssh-agent" || true
-  echo "removed ${label}; Apple's ssh-agent is enabled again from the next login"
+  # The login session's SSH_AUTH_SOCK, set by the launch script for GUI
+  # applications: gone with the agent, when it is this agent's socket and
+  # not another HOME's. launchd's own value (Apple's socket) is back at the
+  # next login.
+  if [ "$(launchctl getenv SSH_AUTH_SOCK 2> /dev/null)" = "${HOME}/.ssh/org.forkcloser.agent.sock" ]; then
+    launchctl unsetenv SSH_AUTH_SOCK 2> /dev/null || true
+  fi
+  rc="$(shell_rc)"
+  if [ -f "${rc}" ] && grep -qxF -- "${rc_line}" "${rc}"; then
+    # The two lines the install wrote, and only those; written through, so
+    # an rc that is a symlink into a dotfiles tree stays one.
+    grep -vxF -e "${rc_mark}" -e "${rc_line}" "${rc}" > "${rc}.tmp" && cat "${rc}.tmp" > "${rc}" && rm -f "${rc}.tmp"
+    echo "removed ${label} and the SSH_AUTH_SOCK export from ${rc}; open a new shell"
+  else
+    echo "removed ${label}"
+  fi
   exit 0
 fi
 
@@ -39,10 +68,12 @@ launchctl bootout "${domain}/${label}" 2> /dev/null || true
 sed -e "s|{LAUNCH_SCRIPT}|${script}|" -e "s|{LOG_DIR}|${logs}|" \
   "${self}/../share/forkcloser/${label}.plist" > "${plist}"
 
-# Hygiene, not a requirement: ours listens on its own socket, and Apple's is
-# socket-activated. `disable` takes effect at the next login; SIP refuses
-# `bootout` and `kill` of an Apple LaunchAgent.
-launchctl disable "${domain}/com.openssh.ssh-agent" || echo "could not disable Apple's ssh-agent (harmless)" >&2
-
 launchctl bootstrap "${domain}" "${plist}"
-echo "installed ${label} (${script}); add '. \"\$HOME/.posh_ssh\"' to your shell profile for SSH_AUTH_SOCK"
+
+rc="$(shell_rc)"
+if [ -f "${rc}" ] && grep -qxF -- "${rc_line}" "${rc}"; then
+  echo "installed ${label} (${script}); ${rc} already exports SSH_AUTH_SOCK; GUI applications see the agent once relaunched"
+else
+  printf '\n%s\n%s\n' "${rc_mark}" "${rc_line}" >> "${rc}"
+  echo "installed ${label} (${script}); SSH_AUTH_SOCK export appended to ${rc}: run 'source ${rc}' or open a new shell; GUI applications see the agent once relaunched"
+fi
