@@ -97,20 +97,34 @@ package through their real path.
 
 ```bash
 ssh-agent-install              # ~/Library/LaunchAgents/org.forkcloser.ssh_agent.plist, started
-printf '. "$HOME/.posh_ssh"\n' >> ~/.profile   # SSH_AUTH_SOCK for your shells
-ssh-agent-install uninstall    # stop, remove, re-enable Apple's agent at the next login
+ssh-agent-install uninstall    # stop and remove; GUI applications have no agent until the next login
 ```
 
-The agent listens on `~/.ssh/agent.sock`, foreground under launchd, restarted
-by it; `~/.posh_ssh` exports `SSH_AUTH_SOCK`. The plist points at the launch
+The installer appends `export SSH_AUTH_SOCK="$HOME/.ssh/org.forkcloser.agent.sock"` to the
+login shell's rc (`~/.zshrc`, `~/.bashrc` or `~/.profile`) when the line is
+not there, and says so: source the file or open a new shell. `uninstall`
+removes the line again.
+
+The agent listens on `~/.ssh/org.forkcloser.agent.sock`, foreground under launchd, restarted
+by it. The plist points at the launch
 script by the package's own path, since launchd starts it with HOME and the
 system PATH only, nothing a tool manager's proxy could resolve itself with;
 after an upgrade to a new package directory, run `ssh-agent-install` again.
-The launch script execs the `ssh-agent` beside it. Apple's
-agent is socket-activated and only ever runs when a client connects to its
-listener, which nothing does once `SSH_AUTH_SOCK` points at ours; the
-installer still disables it for the next login (SIP refuses `bootout` and
-`kill` of an Apple LaunchAgent).
+The launch script execs the `ssh-agent` beside it, and sets
+`SSH_AUTH_SOCK` in the login session's environment too (`launchctl setenv`,
+at every start, since it lasts a login): that is where GUI applications
+started from the Dock or Spotlight take theirs, and launchd's own value
+points at Apple's agent. An application already running keeps the value it
+started with until relaunched.
+
+Apple's agent is left alone: it listens on its own socket and only ever runs
+when a client connects there, which nothing does once `SSH_AUTH_SOCK` is
+ours. To retire it anyway, as the user:
+
+```bash
+launchctl disable gui/$(id -u)/com.openssh.ssh-agent   # from the next login; SIP refuses bootout and kill
+launchctl enable gui/$(id -u)/com.openssh.ssh-agent    # undo, from the next login
+```
 
 ## Releasing
 

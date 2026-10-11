@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 #
-# Start this package's ssh-agent on ~/.ssh/agent.sock, foreground, for the
-# LaunchAgent (which restarts it) or a shell. Writes ~/.posh_ssh, which exports
-# SSH_AUTH_SOCK for the shells that source it.
+# Start this package's ssh-agent on ~/.ssh/org.forkcloser.agent.sock, foreground, for the
+# LaunchAgent (which restarts it) or a shell, and set SSH_AUTH_SOCK in the
+# login session's environment, which is where GUI applications started from
+# the Dock or Spotlight take theirs (launchd's own value points at Apple's
+# agent). launchctl setenv lasts the login session, so it is done at every
+# start, not at install. Shells get the variable from their rc, which the
+# installer writes.
 #
 # The agent is the one beside this script, in the package's bin, found through
 # the script's real path, never through PATH: launchd gives the system's.
@@ -13,7 +17,7 @@ self="$(cd "$(dirname "$(readlink -f "$0")")" && pwd -P)"
 agent="${self}/../bin/ssh-agent"
 [ -x "${agent}" ] || { echo "ssh-agent-launchd: no ssh-agent at ${agent}" >&2; exit 1; }
 
-socket="${HOME}/.ssh/agent.sock"
+socket="${HOME}/.ssh/org.forkcloser.agent.sock"
 mkdir -p "${HOME}/.ssh"
 chmod 0700 "${HOME}/.ssh"
 
@@ -27,7 +31,14 @@ fi
 rm -f "${socket}"
 [ ! -S "${HOME}/.ssh/agent" ] || rm -f "${HOME}/.ssh/agent"
 
-# shellcheck disable=SC2016 # the line is for the shell that sources it: $HOME expands there, not here
-printf 'export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"\n' > "${HOME}/.posh_ssh"
+# Only the account's own home publishes its socket to the login session: an
+# agent started under another HOME (a test, another user's tree) must not
+# point every GUI application at it.
+# A directory service that does not answer leaves the variable alone, never
+# the agent unstarted.
+account_home="$(dscl . -read "/Users/$(id -un)" NFSHomeDirectory 2> /dev/null | awk '{print $2}' || true)"
+if [ -n "${account_home}" ] && [ "${HOME}" = "${account_home}" ]; then
+  launchctl setenv SSH_AUTH_SOCK "${socket}" 2> /dev/null || true
+fi
 
 exec "${agent}" -D -a "${socket}"

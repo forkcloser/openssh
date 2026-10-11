@@ -60,19 +60,20 @@ done
 # 6. The agent starts through the launch script, on a socket under a
 # throwaway HOME, and answers ssh-add. The script runs with the system PATH,
 # as launchd runs it: a tool manager's shims are not part of that environment.
+# A throwaway HOME is not the account's, so the login session's SSH_AUTH_SOCK
+# is left alone, by the script's own guard.
 home="${work}/home"
 mkdir -p "${home}"
 HOME="${home}" PATH=/usr/bin:/bin "${prefix}/libexec/ssh-agent-launchd" > "${work}/agent.log" 2>&1 &
 agent=$!
 trap 'kill "${agent}" 2>/dev/null; rm -rf "${work}"' EXIT
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  [ -S "${home}/.ssh/agent.sock" ] && break
+  [ -S "${home}/.ssh/org.forkcloser.agent.sock" ] && break
   sleep 0.5
 done
-[ -S "${home}/.ssh/agent.sock" ] || { cat "${work}/agent.log" >&2; echo "the agent did not bind its socket" >&2; exit 1; }
-grep -q 'export SSH_AUTH_SOCK=' "${home}/.posh_ssh" || { echo ".posh_ssh was not written under the test HOME" >&2; exit 1; }
+[ -S "${home}/.ssh/org.forkcloser.agent.sock" ] || { cat "${work}/agent.log" >&2; echo "the agent did not bind its socket" >&2; exit 1; }
 # ssh-add -l exits 1 on an empty agent: the answer is in its output.
-SSH_AUTH_SOCK="${home}/.ssh/agent.sock" "${prefix}/bin/ssh-add" -l > "${work}/ssh-add.log" 2>&1 || true
+SSH_AUTH_SOCK="${home}/.ssh/org.forkcloser.agent.sock" "${prefix}/bin/ssh-add" -l > "${work}/ssh-add.log" 2>&1 || true
 grep -q 'The agent has no identities' "${work}/ssh-add.log" || { cat "${work}/ssh-add.log" >&2; echo "ssh-add cannot talk to the agent" >&2; exit 1; }
 
 echo "✓ smoke: ${version} · sk-ed25519 · relocatable · scp → own ssh · agent runs"
