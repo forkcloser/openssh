@@ -46,11 +46,11 @@ ln -s "${prefix}/bin/ssh" "${work}/elsewhere/ssh"
 "${prefix}/bin/scp" -v -o BatchMode=yes -o ConnectTimeout=1 nobody@127.0.0.1:none "${work}/none" > "${work}/scp.log" 2>&1 || true
 grep -q "Executing: program ${prefix}/bin/ssh " "${work}/scp.log" || { echo "scp does not execute the package's ssh" >&2; exit 1; }
 
-# 5. No build path survives in the client binaries. strings goes to a file
-# first: under pipefail a grep -q that stops reading would fail the pipeline
-# on a match, and the if would read that as a pass.
-for bin in ssh ssh-agent ssh-add scp sftp; do
-  strings "${prefix}/bin/${bin}" > "${work}/strings.txt"
+# 5. No build path survives in the binaries. strings goes to a file first:
+# under pipefail a grep -q that stops reading would fail the pipeline on a
+# match, and the if would read that as a pass.
+for bin in bin/ssh bin/ssh-agent bin/ssh-add bin/scp bin/sftp sbin/sshd libexec/sshd-session libexec/sshd-auth libexec/sftp-server; do
+  strings "${prefix}/${bin}" > "${work}/strings.txt"
   if grep -q -E '/(build|stage|Users/runner)/' "${work}/strings.txt"; then
     echo "${bin} carries a build path" >&2
     exit 1
@@ -76,4 +76,36 @@ done
 SSH_AUTH_SOCK="${home}/.ssh/org.forkcloser.agent.sock" "${prefix}/bin/ssh-add" -l > "${work}/ssh-add.log" 2>&1 || true
 grep -q 'The agent has no identities' "${work}/ssh-add.log" || { cat "${work}/ssh-add.log" >&2; echo "ssh-add cannot talk to the agent" >&2; exit 1; }
 
-echo "✓ smoke: ${version} · sk-ed25519 · relocatable · scp → own ssh · agent runs"
+# 7. The server, as this user, on an ephemeral port: the shipped sshd_config
+# is read from the package (no -f: the relocated default), the config test
+# passes with a fresh host key, and a login with a key from a throwaway
+# authorized_keys gets a session through the package's own sshd-session (the
+# relocated helper path, no override). -p replaces the file's port outright
+# (a -o Port would add to it, and the file's 22 would be bound beside it);
+# the file's any-address listeners stay, for the seconds the test takes.
+# StrictModes is off for the test alone: the throwaway authorized_keys sits
+# under a temp dir whose chain the check rightly refuses.
+"${prefix}/bin/ssh-keygen" -q -t ed25519 -N '' -f "${work}/hostkey"
+"${prefix}/bin/ssh-keygen" -q -t ed25519 -N '' -f "${work}/id"
+cp "${work}/id.pub" "${work}/authorized_keys"
+port=$((20000 + RANDOM % 20000))
+"${prefix}/sbin/sshd" -t -h "${work}/hostkey" -p "${port}" -o "AuthorizedKeysFile=${work}/authorized_keys" -o StrictModes=no
+"${prefix}/sbin/sshd" -D -h "${work}/hostkey" -p "${port}" -o "AuthorizedKeysFile=${work}/authorized_keys" -o StrictModes=no -E "${work}/sshd.log" &
+sshd=$!
+trap 'kill "${agent}" "${sshd}" 2>/dev/null; rm -rf "${work}"' EXIT
+logged_in=
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if "${prefix}/bin/ssh" -p "${port}" -i "${work}/id" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o "UserKnownHostsFile=${work}/known_hosts" -o ConnectTimeout=2 "$(id -un)@127.0.0.1" 'echo session-ok' > "${work}/ssh.out" 2> "${work}/ssh.err"; then
+    logged_in=1
+    break
+  fi
+  sleep 0.5
+done
+if [ -z "${logged_in}" ] || ! grep -qx 'session-ok' "${work}/ssh.out"; then
+  cat "${work}/ssh.err" "${work}/sshd.log" >&2
+  echo "no session through the package's sshd" >&2
+  exit 1
+fi
+grep -q 'Accepted publickey' "${work}/sshd.log" || { cat "${work}/sshd.log" >&2; echo "sshd did not log the login" >&2; exit 1; }
+
+echo "✓ smoke: ${version} · sk-ed25519 · relocatable · scp → own ssh · agent runs · sshd logs this user in"

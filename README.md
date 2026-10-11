@@ -8,9 +8,10 @@ provider) is unusable with the system `ssh`, `ssh-agent` and `ssh-keygen`.
 
 What the package is:
 
-- **OpenSSH portable**, the client set: `ssh`, `ssh-agent`, `ssh-add`,
-  `ssh-keygen`, `scp`, `sftp`, `ssh-keyscan`, and the `ssh-sk-helper` and
-  `ssh-pkcs11-helper` they spawn. No `sshd`.
+- **OpenSSH portable**: the client set (`ssh`, `ssh-agent`, `ssh-add`,
+  `ssh-keygen`, `scp`, `sftp`, `ssh-keyscan`, the `ssh-sk-helper` and
+  `ssh-pkcs11-helper` they spawn) and the server (`sshd` with its two
+  helpers), the server off by default and user-scoped when on.
 - **Built `--without-openssl`**: ed25519 and the security-key forms, the
   post-quantum hybrid key exchange, nothing RSA, nothing ECDSA. `ssh -V` says
   `OpenSSH_<version>, without OpenSSL`.
@@ -125,6 +126,40 @@ ours. To retire it anyway, as the user:
 launchctl disable gui/$(id -u)/com.openssh.ssh-agent   # from the next login; SIP refuses bootout and kill
 launchctl enable gui/$(id -u)/com.openssh.ssh-agent    # undo, from the next login
 ```
+
+## The server
+
+Off by default: nothing listens until you say so. `sshd-install` runs the
+package's `sshd` as a user LaunchAgent, `org.forkcloser.sshd`, as you, never
+as root:
+
+```bash
+sshd-install      # host key made once, config tested, server loaded on port 22; prints the fingerprint
+sshd-uninstall    # server unloaded; the host key stays
+```
+
+What that means:
+
+- **Sessions are yours only.** The server authenticates with your
+  `~/.ssh/authorized_keys` and logs in your account; no other user, no root,
+  no password, no keyboard-interactive (`etc/ssh/sshd_config`, the hardened
+  set with the client's algorithm lists). No privilege separation user or
+  chroot is needed below root.
+- **Port 22, no sudo.** macOS lets a user bind port 22 on the any-address
+  (`0.0.0.0` and `::`), and refuses a specific address; the shipped config
+  binds the any-address for that reason.
+- **The host key** lives under `${XDG_STATE_HOME:-~/.local/state}/org.forkcloser.sshd/`,
+  outside the package directory, so a package update keeps the server's
+  identity; `sshd-install` after an update moves the server onto the new
+  package path. Logs: `~/Library/Logs/org.forkcloser.sshd/sshd.log`.
+- **TCC.** A session runs with the server's privacy permissions: to read
+  Desktop, Documents, Downloads or other protected folders over ssh, grant
+  the package's `sbin/sshd` Full Disk Access once (System Settings, Privacy &
+  Security). Touch ID for `sudo` does not work over ssh.
+- **Remote Login off.** Apple's server (System Settings, General, Sharing)
+  holds port 22 when it is on; `sshd-install` refuses to install beside it.
+- The macOS application firewall may ask once whether `sshd` accepts
+  incoming connections.
 
 ## Releasing
 
