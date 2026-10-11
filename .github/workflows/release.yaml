@@ -79,6 +79,16 @@ jobs:
           # Everything published, including checksums.txt — no unattested asset.
           subject-path: dist/*
       - name: Publish release
+        # `just do release vX.Y.Z` creates the release page right after pushing
+        # the tag (this repository has no .release-go.yaml), so the page is
+        # usually there before this job runs: then the assets are attached to
+        # it. A tag pushed by hand has no page yet: then it is created here.
+        # Either way the assets land once; --clobber makes a rerun idempotent.
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --verify-tag --generate-notes dist/*
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber dist/*
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --verify-tag --generate-notes dist/*
+          fi
