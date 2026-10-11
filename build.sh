@@ -130,9 +130,9 @@ echo "openssh ${openssh_version}"
 src="${work}/src/openssh"
 unpack openssh "${src}"
 
-# The relocation patch, only on the files it was written against: the twelve
+# The relocation patch, only on the files it was written against: the sixteen
 # it touches, hashed in the order patches/relocate.sha256 records.
-patched=(misc.c misc.h readconf.c readpass.c scp.c sftp.c ssh-add.c ssh-agent.c ssh-pkcs11-client.c ssh-sk-client.c ssh.c sshconnect2.c)
+patched=(misc.c misc.h readconf.c readpass.c scp.c servconf.c sftp.c ssh-add.c ssh-agent.c ssh-pkcs11-client.c ssh-sk-client.c ssh.c sshconnect2.c sshd-auth.c sshd-session.c sshd.c)
 expected="$(cat "${root}/patches/relocate.sha256")"
 actual="$(cd "${src}" && cat "${patched[@]}" | sha256sum | cut -d' ' -f1)"
 [ "${actual}" = "${expected}" ] || {
@@ -166,19 +166,21 @@ grep -q 'reloc_path' "${src}/misc.c" || { echo "relocate.patch did not apply" >&
 mv "${stage}${install_prefix}"/* "${stage}/"
 rm -rf "${stage:?}/opt"
 
-# The client set only. The server (sshd and its helpers, sftp-server, the
-# moduli), ssh-keysign (hostbased authentication, which the shipped config
-# refuses) and the man pages leave; our ssh_config replaces the generated one.
-rm -rf "${stage:?}/sbin" "${stage:?}/share" "${stage:?}/var" \
-  "${stage}/libexec/sshd-session" "${stage}/libexec/sshd-auth" "${stage}/libexec/sftp-server" "${stage}/libexec/ssh-keysign" \
-  "${stage}/etc/ssh/moduli" "${stage}/etc/ssh/sshd_config"
+# The client set and the server (sshd, its two helpers, sftp-server, the
+# moduli). ssh-keysign (hostbased authentication, which both shipped configs
+# refuse) and the man pages leave; our configs replace the generated ones.
+rm -rf "${stage:?}/share" "${stage:?}/var" "${stage}/libexec/ssh-keysign"
 install -m 0644 "${root}/config/ssh_config" "${stage}/etc/ssh/ssh_config"
+install -m 0644 "${root}/config/sshd_config" "${stage}/etc/ssh/sshd_config"
 
-# The agent: the launch script, its LaunchAgent and the installer.
+# The agent and the server as LaunchAgents: launch script, plists, installers.
 install -m 0755 "${root}/agent/ssh-agent-launchd" "${stage}/libexec/ssh-agent-launchd"
 install -m 0755 "${root}/agent/ssh-agent-install" "${stage}/bin/ssh-agent-install"
+install -m 0755 "${root}/agent/sshd-install" "${stage}/bin/sshd-install"
+install -m 0755 "${root}/agent/sshd-uninstall" "${stage}/bin/sshd-uninstall"
 mkdir -p "${stage}/share/forkcloser"
 install -m 0644 "${root}/agent/org.forkcloser.ssh_agent.plist" "${stage}/share/forkcloser/org.forkcloser.ssh_agent.plist"
+install -m 0644 "${root}/agent/org.forkcloser.sshd.plist" "${stage}/share/forkcloser/org.forkcloser.sshd.plist"
 
 # Licenses of everything linked in.
 mkdir -p "${stage}/share/licenses"
@@ -189,7 +191,7 @@ install -m 0644 "${work}/src/libressl/COPYING" "${stage}/share/licenses/libressl
 
 # Every binary links the system only: a path into the build tree is a static
 # library that did not get linked in, or a dylib that leaked.
-for bin in "${stage}"/bin/* "${stage}"/libexec/*; do
+for bin in "${stage}"/bin/* "${stage}"/sbin/* "${stage}"/libexec/*; do
   case "$(file -b "${bin}")" in
     *Mach-O*)
       otool -L "${bin}" | sed 1d | awk '{print $1}' | grep -v -E '^(/usr/lib/|/System/Library/Frameworks/)' && {

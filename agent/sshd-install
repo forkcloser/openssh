@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+#
+# Run this package's sshd as a user LaunchAgent, org.forkcloser.sshd: a host
+# key under the user's state directory (made once, kept across package
+# updates), the shipped sshd_config, port 22 on every address, sessions as
+# this user only. No sudo: macOS lets a user bind port 22 on the any-address.
+#
+# Idempotent: a loaded server is booted out and started again from this
+# package's path, so running it after an update moves the server over.
+#
+#   sshd-install      generate the host key if missing, load the server
+#   sshd-uninstall    unload it; the host key stays
+
+set -euo pipefail
+
+label='org.forkcloser.sshd'
+plist="${HOME}/Library/LaunchAgents/${label}.plist"
+state="${XDG_STATE_HOME:-${HOME}/.local/state}/${label}"
+logs="${HOME}/Library/Logs/${label}"
+domain="gui/$(id -u)"
+
+self="$(cd "$(dirname "$(readlink -f "$0")")" && pwd -P)"
+prefix="$(cd "${self}/.." && pwd -P)"
+sshd="${prefix}/sbin/sshd"
+config="${prefix}/etc/ssh/sshd_config"
+hostkey="${state}/ssh_host_ed25519_key"
+[ -x "${sshd}" ] && [ -f "${config}" ] || { echo "sshd-install: no sshd and sshd_config under ${prefix}" >&2; exit 1; }
+
+(umask 077 && mkdir -p "${state}")
+mkdir -p "${logs}" "${HOME}/Library/LaunchAgents"
+
+if [ ! -f "${hostkey}" ]; then
+  "${prefix}/bin/ssh-keygen" -q -t ed25519 -N '' -C "${label} $(hostname -s)" -f "${hostkey}"
+fi
+
+# The configuration as the server will read it, with this host key, before
+# anything is loaded.
+"${sshd}" -t -f "${config}" -h "${hostkey}"
+
+# Port 22 taken by another listener (Remote Login in System Settings is the
+# usual one) would leave this server unable to bind, respawned by KeepAlive
+# forever; said here instead, unless it is this agent's own server.
+if ! launchctl print "${domain}/${label}" > /dev/null 2>&1 && [ -n "$(lsof -nP -iTCP:22 -sTCP:LISTEN 2> /dev/null)" ]; then
+  echo "sshd-install: port 22 is already taken (Remote Login on, in System Settings > General > Sharing?); nothing installed" >&2
+  exit 1
+fi
+
+launchctl bootout "${domain}/${label}" 2> /dev/null || true
+
+sed -e "s|{SSHD}|${sshd}|" -e "s|{CONFIG}|${config}|" -e "s|{HOSTKEY}|${hostkey}|" -e "s|{LOG_DIR}|${logs}|" \
+  "${prefix}/share/forkcloser/${label}.plist" > "${plist}"
+
+launchctl bootstrap "${domain}" "${plist}"
+echo "installed ${label}: sshd on port 22 as $(id -un), host key $("${prefix}/bin/ssh-keygen" -lf "${hostkey}.pub" | awk '{print $2}'), log ${logs}/sshd.log"

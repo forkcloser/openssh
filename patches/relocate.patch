@@ -11,8 +11,8 @@ index 866f7b8..3005a2c 100644
 + * Relocation: the configuration directory and the helpers live beside the
 + * executable, under the prefix the package was unpacked to, not at a path
 + * fixed when it was built. The prefix is the parent of the directory holding
-+ * the executable (bin or libexec), after resolving symlinks, so a symlink in
-+ * a tool manager's bin directory still lands in the package.
++ * the executable (bin, sbin or libexec), after resolving symlinks, so a
++ * symlink in a tool manager's bin directory still lands in the package.
 + */
 +#include <mach-o/dyld.h>
 +
@@ -122,6 +122,31 @@ index 54ada85..f1b8bc8 100644
  	argc -= optind;
  	argv += optind;
  
+diff --git a/servconf.c b/servconf.c
+index 044043b..689b327 100644
+--- a/servconf.c
++++ b/servconf.c
+@@ -343,7 +343,7 @@ fill_default_server_options(ServerOptions *options)
+ 	if (options->pid_file == NULL)
+ 		options->pid_file = xstrdup(_PATH_SSH_DAEMON_PID_FILE);
+ 	if (options->moduli_file == NULL)
+-		options->moduli_file = xstrdup(_PATH_DH_MODULI);
++		options->moduli_file = xstrdup(reloc_path("etc/ssh/moduli"));
+ 	if (options->xauth_location == NULL)
+ 		options->xauth_location = xstrdup(_PATH_XAUTH);
+ 	if (options->log_facility == SYSLOG_FACILITY_NOT_SET)
+@@ -419,9 +419,9 @@ fill_default_server_options(ServerOptions *options)
+ 	if (options->sk_provider == NULL)
+ 		options->sk_provider = xstrdup("internal");
+ 	if (options->sshd_session_path == NULL)
+-		options->sshd_session_path = xstrdup(_PATH_SSHD_SESSION);
++		options->sshd_session_path = xstrdup(reloc_path("libexec/sshd-session"));
+ 	if (options->sshd_auth_path == NULL)
+-		options->sshd_auth_path = xstrdup(_PATH_SSHD_AUTH);
++		options->sshd_auth_path = xstrdup(reloc_path("libexec/sshd-auth"));
+ 	if (options->pubkey_auth_options == -1) {
+ 		options->pubkey_auth_options = 0;
+ 		options->max_pubkey_ok = DEFAULT_AUTH_FAIL_MAX;
 diff --git a/sftp.c b/sftp.c
 index ecbaefd..e0bb293 100644
 --- a/sftp.c
@@ -238,3 +263,60 @@ index 265ebfc..52efe99 100644
  		    strerror(errno));
  	}
  	close(from[1]);
+diff --git a/sshd-auth.c b/sshd-auth.c
+index 3adf1a4..fdf3643 100644
+--- a/sshd-auth.c
++++ b/sshd-auth.c
+@@ -108,7 +108,7 @@ extern char *__progname;
+ ServerOptions options;
+ 
+ /* Name of the server configuration file. */
+-char *config_file_name = _PATH_SERVER_CONFIG_FILE;
++char *config_file_name = NULL;	/* -f, else the package's own */
+ 
+ /*
+  * Debug mode flag.  This can be set on the command line.  If debug
+@@ -478,6 +478,8 @@ main(int ac, char **av)
+ 	initialize_server_options(&options);
+ 
+ 	/* Parse command-line arguments. */
++	if (config_file_name == NULL)
++		config_file_name = reloc_path("etc/ssh/sshd_config");
+ 	while ((opt = getopt(ac, av,
+ 	    "C:E:b:c:f:g:h:k:o:p:u:46DGQRTdeiqrtV")) != -1) {
+ 		switch (opt) {
+diff --git a/sshd-session.c b/sshd-session.c
+index 1af9bcf..04cca59 100644
+--- a/sshd-session.c
++++ b/sshd-session.c
+@@ -112,7 +112,7 @@ extern char *__progname;
+ ServerOptions options;
+ 
+ /* Name of the server configuration file. */
+-char *config_file_name = _PATH_SERVER_CONFIG_FILE;
++char *config_file_name = NULL;	/* -f, else the package's own */
+ 
+ /*
+  * Debug mode flag.  This can be set on the command line.  If debug
+@@ -813,6 +813,8 @@ main(int ac, char **av)
+ 	initialize_server_options(&options);
+ 
+ 	/* Parse command-line arguments. */
++	if (config_file_name == NULL)
++		config_file_name = reloc_path("etc/ssh/sshd_config");
+ 	while ((opt = getopt(ac, av,
+ 	    "C:E:b:c:f:g:h:k:o:p:u:46DGQRTdeiqrtV")) != -1) {
+ 		switch (opt) {
+diff --git a/sshd.c b/sshd.c
+index da2aba9..a6a9223 100644
+--- a/sshd.c
++++ b/sshd.c
+@@ -1313,7 +1313,7 @@ main(int ac, char **av)
+ 	extern char *optarg;
+ 	extern int optind;
+ 	int log_stderr = 0, inetd_flag = 0, test_flag = 0, no_daemon_flag = 0;
+-	char *config_file_name = _PATH_SERVER_CONFIG_FILE;
++	char *config_file_name = reloc_path("etc/ssh/sshd_config");
+ 	int r, opt, do_dump_cfg = 0, keytype, already_daemon, have_agent = 0;
+ 	int sock_in = -1, sock_out = -1, newsock = -1, rexec_argc = 0;
+ 	int devnull, config_s[2] = { -1 , -1 }, have_connection_info = 0;

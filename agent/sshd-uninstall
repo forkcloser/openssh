@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#
+# Unload the org.forkcloser.sshd LaunchAgent and remove its plist. The host
+# key stays under the state directory, so a later sshd-install keeps the
+# server's identity.
+
+set -euo pipefail
+
+label='org.forkcloser.sshd'
+plist="${HOME}/Library/LaunchAgents/${label}.plist"
+state="${XDG_STATE_HOME:-${HOME}/.local/state}/${label}"
+domain="gui/$(id -u)"
+
+launchctl bootout "${domain}/${label}" 2> /dev/null || true
+rm -f "${plist}"
+echo "removed ${label}; the host key stays under ${state}"

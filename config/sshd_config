@@ -1,0 +1,58 @@
+# The server defaults this package ships, read from <package>/etc/ssh. The
+# host key and the log file come from sshd-install on the command line. The
+# server runs as the user who installed it, never as root: it logs in that
+# user only, with that user's ~/.ssh/authorized_keys, and binds port 22 on the
+# any-address, which macOS allows below root. The algorithm lists are the
+# client's (ssh_config): ed25519 and its security-key and ML-DSA hybrid forms,
+# the post-quantum hybrid key exchanges, an AEAD cipher then CTR with an
+# encrypt-then-MAC tag.
+
+Port 22
+ListenAddress 0.0.0.0
+ListenAddress ::
+AddressFamily any
+PidFile none
+
+# One identity: public keys, nothing interactive, no root, no host-based.
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+PasswordAuthentication no
+PermitEmptyPasswords no
+KbdInteractiveAuthentication no
+HostbasedAuthentication no
+IgnoreRhosts yes
+IgnoreUserKnownHosts yes
+PermitRootLogin no
+PermitUserEnvironment no
+StrictModes yes
+MaxAuthTries 1
+LoginGraceTime 30s
+MaxSessions 10
+MaxStartups 3:100:4
+
+# A shell and sftp, nothing tunnelled.
+PermitTTY yes
+Subsystem sftp internal-sftp
+AllowAgentForwarding no
+AllowTcpForwarding no
+GatewayPorts no
+PermitTunnel no
+X11Forwarding no
+AcceptEnv LANG LC_*
+PrintLastLog no
+PrintMotd no
+
+ClientAliveInterval 300
+ClientAliveCountMax 3
+RekeyLimit 1G 3600
+TCPKeepAlive no
+UseDNS no
+LogLevel INFO
+
+CASignatureAlgorithms sk-ssh-ed25519@openssh.com,ssh-ed25519,ssh-mldsa44-ed25519
+HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com,sk-ssh-ed25519-cert-v01@openssh.com,ssh-mldsa44-ed25519-cert,ssh-ed25519,sk-ssh-ed25519@openssh.com,ssh-mldsa44-ed25519
+PubkeyAcceptedAlgorithms ssh-ed25519-cert-v01@openssh.com,sk-ssh-ed25519-cert-v01@openssh.com,ssh-mldsa44-ed25519-cert,ssh-ed25519,sk-ssh-ed25519@openssh.com,ssh-mldsa44-ed25519
+HostbasedAcceptedAlgorithms ssh-ed25519-cert-v01@openssh.com,sk-ssh-ed25519-cert-v01@openssh.com,ssh-mldsa44-ed25519-cert,ssh-ed25519,sk-ssh-ed25519@openssh.com,ssh-mldsa44-ed25519
+KexAlgorithms mlkem768x25519-sha256,sntrup761x25519-sha512@openssh.com,curve25519-sha256
+Ciphers chacha20-poly1305@openssh.com,aes256-ctr
+MACs hmac-sha2-512-etm@openssh.com
