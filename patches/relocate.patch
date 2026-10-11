@@ -1,0 +1,240 @@
+diff --git a/misc.c b/misc.c
+index 866f7b8..3005a2c 100644
+--- a/misc.c
++++ b/misc.c
+@@ -3348,3 +3348,37 @@ mkdir_path(const char *target, mode_t mode)
+ 	return ret;
+ #endif
+ }
++
++/*
++ * Relocation: the configuration directory and the helpers live beside the
++ * executable, under the prefix the package was unpacked to, not at a path
++ * fixed when it was built. The prefix is the parent of the directory holding
++ * the executable (bin or libexec), after resolving symlinks, so a symlink in
++ * a tool manager's bin directory still lands in the package.
++ */
++#include <mach-o/dyld.h>
++
++const char *
++reloc_path(const char *rel)
++{
++	static char prefix[PATH_MAX];
++	char exe[PATH_MAX], real[PATH_MAX], *p;
++	uint32_t size = sizeof(exe);
++
++	if (prefix[0] == '\0') {
++		if (_NSGetExecutablePath(exe, &size) != 0 ||
++		    realpath(exe, real) == NULL)
++			fatal("reloc_path: cannot locate the running executable");
++		/* strip the file name, then the bin/libexec directory */
++		if ((p = strrchr(real, '/')) == NULL)
++			fatal("reloc_path: no directory in %s", real);
++		*p = '\0';
++		if ((p = strrchr(real, '/')) == NULL)
++			fatal("reloc_path: no prefix above %s", real);
++		*p = '\0';
++		if (strlcpy(prefix, real, sizeof(prefix)) >= sizeof(prefix))
++			fatal("reloc_path: prefix too long");
++	}
++	xasprintf(&p, "%s/%s", prefix, rel);
++	return p;
++}
+diff --git a/misc.h b/misc.h
+index 0784f37..bb1ca17 100644
+--- a/misc.h
++++ b/misc.h
+@@ -282,4 +282,8 @@ int signal_is_crash(int);
+ 		    strerror(errno)); \
+ } while (0)
+ 
++/* The path of a file under the installation prefix, found from the running
++ * executable at <prefix>/bin or <prefix>/libexec. */
++const char *reloc_path(const char *);
++
+ #endif /* _MISC_H */
+diff --git a/readconf.c b/readconf.c
+index 9b557de..33cf22b 100644
+--- a/readconf.c
++++ b/readconf.c
+@@ -2106,7 +2106,7 @@ parse_pubkey_algos:
+ 			if (!path_absolute(p) && *p != '~') {
+ 				xasprintf(&arg2, "%s/%s",
+ 				    (flags & SSHCONF_USERCONF) ?
+-				    "~/" _PATH_SSH_USER_DIR : SSHDIR, p);
++				    "~/" _PATH_SSH_USER_DIR : reloc_path("etc/ssh"), p);
+ 			} else {
+ 				arg2 = xstrdup(p);
+ 			}
+@@ -2943,9 +2943,9 @@ fill_default_options(Options * options)
+ 		options->escape_char = '~';
+ 	if (options->num_system_hostfiles == 0) {
+ 		options->system_hostfiles[options->num_system_hostfiles++] =
+-		    xstrdup(_PATH_SSH_SYSTEM_HOSTFILE);
++		    xstrdup(reloc_path("etc/ssh/ssh_known_hosts"));
+ 		options->system_hostfiles[options->num_system_hostfiles++] =
+-		    xstrdup(_PATH_SSH_SYSTEM_HOSTFILE2);
++		    xstrdup(reloc_path("etc/ssh/ssh_known_hosts2"));
+ 	}
+ 	if (options->update_hostkeys == -1) {
+ 		if (options->verify_host_key_dns <= 0 &&
+diff --git a/readpass.c b/readpass.c
+index 2502e52..1ec4e09 100644
+--- a/readpass.c
++++ b/readpass.c
+@@ -173,7 +173,7 @@ read_passphrase(const char *prompt, int flags)
+ 		if (getenv(SSH_ASKPASS_ENV))
+ 			askpass = getenv(SSH_ASKPASS_ENV);
+ 		else
+-			askpass = _PATH_SSH_ASKPASS_DEFAULT;
++			askpass = reloc_path("libexec/ssh-askpass");
+ 		if ((flags & RP_ASK_PERMISSION) != 0)
+ 			askpass_hint = "confirm";
+ 		if ((ret = ssh_askpass(askpass, prompt, askpass_hint)) == NULL)
+@@ -254,7 +254,7 @@ notify_start(int force_askpass, const char *fmt, ...)
+ 		goto out_ctx;
+ 	}
+ 	if ((askpass = getenv("SSH_ASKPASS")) == NULL)
+-		askpass = _PATH_SSH_ASKPASS_DEFAULT;
++		askpass = reloc_path("libexec/ssh-askpass");
+ 	if (*askpass == '\0') {
+ 		debug3_f("cannot notify: no askpass");
+ 		goto out;
+diff --git a/scp.c b/scp.c
+index 54ada85..f1b8bc8 100644
+--- a/scp.c
++++ b/scp.c
+@@ -153,7 +153,7 @@ int throughlocal = 1;
+ int sshport = -1;
+ 
+ /* This is the program to execute for the secure connection. ("ssh" or -S) */
+-char *ssh_program = _PATH_SSH_PROGRAM;
++char *ssh_program = NULL;	/* -S, else the package's own ssh */
+ 
+ /* This is used to store the pid of ssh_program */
+ pid_t do_cmd_pid = -1;
+@@ -619,6 +619,8 @@ main(int argc, char **argv)
+ 			usage();
+ 		}
+ 	}
++	if (ssh_program == NULL)
++		ssh_program = xstrdup(reloc_path("bin/ssh"));
+ 	argc -= optind;
+ 	argv += optind;
+ 
+diff --git a/sftp.c b/sftp.c
+index ecbaefd..e0bb293 100644
+--- a/sftp.c
++++ b/sftp.c
+@@ -2512,7 +2512,7 @@ main(int argc, char **argv)
+ 	char *host = NULL, *user, *cp, **cpp, *file2 = NULL;
+ 	int debug_level = 0;
+ 	char *file1 = NULL, *sftp_server = NULL;
+-	char *ssh_program = _PATH_SSH_PROGRAM, *sftp_direct = NULL;
++	char *ssh_program = xstrdup(reloc_path("bin/ssh")), *sftp_direct = NULL;
+ 	const char *errstr;
+ 	LogLevel ll = SYSLOG_LEVEL_INFO;
+ 	arglist args;
+diff --git a/ssh-add.c b/ssh-add.c
+index 515272a..87b94bd 100644
+--- a/ssh-add.c
++++ b/ssh-add.c
+@@ -978,8 +978,8 @@ main(int argc, char **argv)
+ 		/* use defaults from readconf.c */
+ 		stringlist_append(&hostkey_files, _PATH_SSH_USER_HOSTFILE);
+ 		stringlist_append(&hostkey_files, _PATH_SSH_USER_HOSTFILE2);
+-		stringlist_append(&hostkey_files, _PATH_SSH_SYSTEM_HOSTFILE);
+-		stringlist_append(&hostkey_files, _PATH_SSH_SYSTEM_HOSTFILE2);
++		stringlist_append(&hostkey_files, reloc_path("etc/ssh/ssh_known_hosts"));
++		stringlist_append(&hostkey_files, reloc_path("etc/ssh/ssh_known_hosts2"));
+ 	}
+ 	if (dest_constraint_strings != NULL) {
+ 		for (i = 0; dest_constraint_strings[i] != NULL; i++) {
+diff --git a/ssh-agent.c b/ssh-agent.c
+index 9951345..787f8cb 100644
+--- a/ssh-agent.c
++++ b/ssh-agent.c
+@@ -2620,15 +2620,15 @@ skip:
+ 	if (unveil("/", "r") == -1)
+ 		fatal("%s: unveil /: %s", __progname, strerror(errno));
+ 	if ((ccp = getenv("SSH_SK_HELPER")) == NULL || *ccp == '\0')
+-		ccp = _PATH_SSH_SK_HELPER;
++		ccp = reloc_path("libexec/ssh-sk-helper");
+ 	if (unveil(ccp, "x") == -1)
+ 		fatal("%s: unveil %s: %s", __progname, ccp, strerror(errno));
+ 	if ((ccp = getenv("SSH_PKCS11_HELPER")) == NULL || *ccp == '\0')
+-		ccp = _PATH_SSH_PKCS11_HELPER;
++		ccp = reloc_path("libexec/ssh-pkcs11-helper");
+ 	if (unveil(ccp, "x") == -1)
+ 		fatal("%s: unveil %s: %s", __progname, ccp, strerror(errno));
+ 	if ((ccp = getenv("SSH_ASKPASS")) == NULL || *ccp == '\0')
+-		ccp = _PATH_SSH_ASKPASS_DEFAULT;
++		ccp = reloc_path("libexec/ssh-askpass");
+ 	if (unveil(ccp, "x") == -1)
+ 		fatal("%s: unveil %s: %s", __progname, ccp, strerror(errno));
+ 	if (unveil("/dev/null", "rw") == -1)
+diff --git a/ssh-pkcs11-client.c b/ssh-pkcs11-client.c
+index 6d74d72..092a7bf 100644
+--- a/ssh-pkcs11-client.c
++++ b/ssh-pkcs11-client.c
+@@ -358,7 +358,7 @@ pkcs11_start_helper(const char *path)
+ 		closefrom(STDERR_FILENO + 1);
+ 		prog = getenv("SSH_PKCS11_HELPER");
+ 		if (prog == NULL || strlen(prog) == 0)
+-			prog = _PATH_SSH_PKCS11_HELPER;
++			prog = reloc_path("libexec/ssh-pkcs11-helper");
+ 		if (log_level_get() >= SYSLOG_LEVEL_DEBUG1)
+ 			verbosity = "-vvv";
+ 		debug_f("starting %s %s", prog,
+diff --git a/ssh-sk-client.c b/ssh-sk-client.c
+index 52da28d..da393ef 100644
+--- a/ssh-sk-client.c
++++ b/ssh-sk-client.c
+@@ -57,7 +57,7 @@ start_helper(int *fdp, pid_t *pidp, void (**osigchldp)(int))
+ 
+ 	helper = getenv("SSH_SK_HELPER");
+ 	if (helper == NULL || strlen(helper) == 0)
+-		helper = _PATH_SSH_SK_HELPER;
++		helper = reloc_path("libexec/ssh-sk-helper");
+ #ifdef DEBUG_SK
+ 	verbosity = "-vvv";
+ #endif
+diff --git a/ssh.c b/ssh.c
+index fe660ef..9f7d88d 100644
+--- a/ssh.c
++++ b/ssh.c
+@@ -586,7 +586,7 @@ process_config_files(const char *host_name, struct passwd *pw,
+ 			    (final_pass ? SSHCONF_FINAL : 0), want_final_pass);
+ 
+ 		/* Read systemwide configuration file after user config. */
+-		(void)read_config_file(_PATH_HOST_CONFIG_FILE, pw,
++		(void)read_config_file(reloc_path("etc/ssh/ssh_config"), pw,
+ 		    host, host_name, cmd, &options,
+ 		    final_pass ? SSHCONF_FINAL : 0, want_final_pass);
+ 	}
+diff --git a/sshconnect2.c b/sshconnect2.c
+index 265ebfc..52efe99 100644
+--- a/sshconnect2.c
++++ b/sshconnect2.c
+@@ -2166,7 +2166,7 @@ ssh_keysign(struct ssh *ssh, struct sshkey *key, u_char **sigp, size_t *lenp,
+ 	*sigp = NULL;
+ 	*lenp = 0;
+ 
+-	if (stat(_PATH_SSH_KEY_SIGN, &st) == -1) {
++	if (stat(reloc_path("libexec/ssh-keysign"), &st) == -1) {
+ 		error_f("not installed: %s", strerror(errno));
+ 		return -1;
+ 	}
+@@ -2205,9 +2205,9 @@ ssh_keysign(struct ssh *ssh, struct sshkey *key, u_char **sigp, size_t *lenp,
+ 		closefrom(sock + 1);
+ 
+ 		debug3_f("[child] pid=%ld, exec %s",
+-		    (long)getpid(), _PATH_SSH_KEY_SIGN);
+-		execl(_PATH_SSH_KEY_SIGN, _PATH_SSH_KEY_SIGN, (char *)NULL);
+-		fatal_f("exec(%s): %s", _PATH_SSH_KEY_SIGN,
++		    (long)getpid(), reloc_path("libexec/ssh-keysign"));
++		execl(reloc_path("libexec/ssh-keysign"), reloc_path("libexec/ssh-keysign"), (char *)NULL);
++		fatal_f("exec(%s): %s", reloc_path("libexec/ssh-keysign"),
+ 		    strerror(errno));
+ 	}
+ 	close(from[1]);

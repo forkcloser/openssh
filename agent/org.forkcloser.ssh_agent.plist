@@ -3,19 +3,18 @@
 <plist version="1.0">
     <dict>
         <key>Label</key>
-        <string>world.farcloser.ssh_agent</string>
+        <string>org.forkcloser.ssh_agent</string>
         <key>ProgramArguments</key>
         <array>
             <string>{LAUNCH_SCRIPT}</string>
-            <string>{SSH_AGENT}</string>
         </array>
         <key>RunAtLoad</key>
         <true/>
         <key>KeepAlive</key>
         <true/>
         <key>StandardOutPath</key>
-        <string>{OUT_PATH}</string>
+        <string>{LOG_DIR}/stdout.log</string>
         <key>StandardErrorPath</key>
-        <string>{ERR_PATH}</string>
+        <string>{LOG_DIR}/stderr.log</string>
     </dict>
 </plist>

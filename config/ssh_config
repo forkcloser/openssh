@@ -1,0 +1,43 @@
+# The client defaults this package ships, read from <package>/etc/ssh after
+# ~/.ssh/config. A strict, current baseline: ed25519 and its security-key and
+# ML-DSA hybrid forms only, certificates first for a CA-run fleet; the
+# post-quantum hybrid key exchanges ahead of plain X25519; an AEAD cipher
+# ahead of CTR with an encrypt-then-MAC tag. Every name here is one this
+# build answers to (ssh -Q kex|cipher|mac|key).
+
+Host *
+  Compression no
+  ForwardAgent no
+  Tunnel no
+
+  # Yubikey and macOS integration
+  IgnoreUnknown UseKeychain
+  UseKeychain yes
+  AddKeysToAgent yes
+  IdentityFile ~/.ssh/id_ed25519_sk
+
+  AddressFamily any
+  BatchMode no
+  CheckHostIP yes
+  ConnectionAttempts 1
+  ConnectTimeout 20
+  EscapeChar ~
+  FingerprintHash sha256
+  ForwardX11 no
+  ForwardX11Trusted no
+  GatewayPorts no
+  HashKnownHosts yes
+  HostbasedAuthentication no
+  KbdInteractiveAuthentication no
+  PasswordAuthentication no
+  PermitLocalCommand no
+  Port 22
+  PubkeyAuthentication yes
+  StrictHostKeyChecking ask
+  CASignatureAlgorithms sk-ssh-ed25519@openssh.com,ssh-ed25519,ssh-mldsa44-ed25519
+  HostKeyAlgorithms ssh-ed25519-cert-v01@openssh.com,sk-ssh-ed25519-cert-v01@openssh.com,ssh-mldsa44-ed25519-cert,ssh-ed25519,sk-ssh-ed25519@openssh.com,ssh-mldsa44-ed25519
+  PubkeyAcceptedAlgorithms ssh-ed25519-cert-v01@openssh.com,sk-ssh-ed25519-cert-v01@openssh.com,ssh-mldsa44-ed25519-cert,ssh-ed25519,sk-ssh-ed25519@openssh.com,ssh-mldsa44-ed25519
+  HostbasedAcceptedAlgorithms ssh-ed25519-cert-v01@openssh.com,sk-ssh-ed25519-cert-v01@openssh.com,ssh-mldsa44-ed25519-cert,ssh-ed25519,sk-ssh-ed25519@openssh.com,ssh-mldsa44-ed25519
+  KexAlgorithms mlkem768x25519-sha256,sntrup761x25519-sha512@openssh.com,curve25519-sha256
+  Ciphers chacha20-poly1305@openssh.com,aes256-ctr
+  MACs hmac-sha2-512-etm@openssh.com

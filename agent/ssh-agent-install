@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+#
+# Install this package's ssh-agent as a user LaunchAgent: writes
+# ~/Library/LaunchAgents/org.forkcloser.ssh_agent.plist pointing at the
+# launch script, bootstraps it, and retires Apple's agent for the next login.
+#
+# The plist names the launch script by this package's own path: launchd
+# starts it with HOME and the system PATH only, where a tool manager's proxy
+# has nothing to resolve itself with. After an upgrade to another package
+# directory, run this again.
+#
+#   ssh-agent-install            install and start
+#   ssh-agent-install uninstall  stop and remove, re-enable Apple's agent
+
+set -euo pipefail
+
+label='org.forkcloser.ssh_agent'
+plist="${HOME}/Library/LaunchAgents/${label}.plist"
+logs="${HOME}/Library/Logs/org.forkcloser.ssh_agent"
+domain="gui/$(id -u)"
+
+if [ "${1:-}" = 'uninstall' ]; then
+  launchctl bootout "${domain}/${label}" 2> /dev/null || true
+  rm -f "${plist}"
+  launchctl enable "${domain}/com.openssh.ssh-agent" || true
+  echo "removed ${label}; Apple's ssh-agent is enabled again from the next login"
+  exit 0
+fi
+
+self="$(cd "$(dirname "$(readlink -f "$0")")" && pwd -P)"
+script="$(cd "${self}/../libexec" && pwd -P)/ssh-agent-launchd"
+[ -x "${script}" ] || { echo "ssh-agent-install: no launch script at ${script}" >&2; exit 1; }
+
+mkdir -p "${HOME}/Library/LaunchAgents" "${logs}"
+
+# Already running under this label: stop it, so the new plist is what starts.
+launchctl bootout "${domain}/${label}" 2> /dev/null || true
+
+sed -e "s|{LAUNCH_SCRIPT}|${script}|" -e "s|{LOG_DIR}|${logs}|" \
+  "${self}/../share/forkcloser/${label}.plist" > "${plist}"
+
+# Hygiene, not a requirement: ours listens on its own socket, and Apple's is
+# socket-activated. `disable` takes effect at the next login; SIP refuses
+# `bootout` and `kill` of an Apple LaunchAgent.
+launchctl disable "${domain}/com.openssh.ssh-agent" || echo "could not disable Apple's ssh-agent (harmless)" >&2
+
+launchctl bootstrap "${domain}" "${plist}"
+echo "installed ${label} (${script}); add '. \"\$HOME/.posh_ssh\"' to your shell profile for SSH_AUTH_SOCK"

@@ -1,0 +1,84 @@
+# Release lane for openssh (custom — this repo packages a C project, so the
+# canonical goreleaser lane does not apply; same construction rules:
+# SHA-pinned first-party actions only, minimal per-job permissions, bash
+# everywhere).
+#
+# A pushed v* tag builds the package on the macOS runner, smoke-tests it,
+# generates a GitHub Artifact Attestation for every asset (aqua verifies these
+# natively on install), and publishes the release with a checksums.txt for
+# aqua's checksum pinning. The tag names the version the package carries:
+# v10.6.1 for OpenSSH 10.6p1, v10.6.1.N for a rebuild of it; build.sh refuses
+# a tag that does not name the pinned OpenSSH.
+#
+# workflow_dispatch is the DRY RUN: the build leg runs and uploads its
+# workflow artifact, and the publish job is skipped (tag refs only).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    # darwin arm64 only — Intel Mac support was dropped.
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-aqua
+      - run: aqua install --only-link
+      - name: Build
+        env:
+          # The tag, without its v; a dispatch builds the default version.
+          PACKAGE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+        run: |
+          export PACKAGE_VERSION="${PACKAGE_VERSION#v}"
+          just build
+          just test
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: build/dist/*.tar.gz
+
+  publish:
+    # Tag pushes only: a workflow_dispatch run is a dry run — it proves the
+    # build and stops here.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      # Publish the release and its assets.
+      contents: write
+      # GitHub Artifact Attestations (keyless provenance; aqua verifies).
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum -- *.tar.gz > checksums.txt
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          # Everything published, including checksums.txt — no unattested asset.
+          subject-path: dist/*
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --verify-tag --generate-notes dist/*

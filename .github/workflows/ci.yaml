@@ -1,7 +1,19 @@
-# Seeded once by `limen fix`, then the project's own: limen never updates it.
-# The shared lanes (verify on every platform, fuzz, tools) live in
-# limen-verify.yaml, content-pinned and kept current by `limen fix`; this file
-# calls them, adds the project's own jobs, and gates on all of them.
+# openssh CI (project-specific — this repo builds a C package for macOS, so
+# it diverges from the canonical baseline ci.yaml the way forkcloser/curl
+# does). Construction rules are the same: GitHub's own actions pinned by
+# commit SHA; everything else is pinned, checksum-verified shell via aqua +
+# just.
+#
+# Jobs:
+#   lint  — the shared limen lint lane (shell/yaml/just/links/commits), once.
+#   build — the one release leg on its own runner (macos-15, arm64), then
+#           `just test` smoke-tests the package it produced, so a broken
+#           build, a stale pin or a patch that no longer applies never reaches
+#           a release. A pins.yaml bump cannot go green on a source that fails
+#           to download or verify.
+#   tools — every aqua pin installs for real (limen's canonical job).
+#   gate  — the ONE required status check: it collapses lint, build and tools
+#           to one stable name, so the ruleset never knows this file's jobs.
 name: ci
 
 on:
@@ -10,8 +22,7 @@ on:
   pull_request:
 
 # No default token permissions: each job states what it needs. This workflow
-# only ever reads the repository — it cannot write code, releases, or
-# packages even if a step is compromised.
+# only ever reads the repository.
 permissions: {}
 
 # A superseded run (new push to the same branch/PR) is cancelled, not raced.
@@ -19,37 +30,141 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  limen:
-    uses: ./.github/workflows/limen-verify.yaml
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
-      # A project that needs another runner set passes it here, e.g.
-      # with:
-      #   os: '["ubuntu-24.04", "macos-15"]'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history: `just do lint commits` validates the commit range
+          # against the PR's base branch, which a shallow clone lacks.
+          fetch-depth: 0
 
-  # The ONE required status check (defaultRequiredChecks in
-  # internal/github/audit.go). Requiring the lanes by name would bake the
-  # runner list into every ruleset; this job collapses them to one stable
-  # name. A project job joins `needs` and the assertion below.
+      - name: Install aqua (pinned, checksum-verified)
+        uses: ./.github/actions/setup-aqua
+
+      # aqua's package store, keyed on the exact pins and per architecture. A
+      # warm store turns every lazy first use into a link; the fallback key
+      # keeps the tools a pin bump did not touch.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.AQUA_ROOT_DIR }}/pkgs
+          key: aqua-pkgs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.aqua/aqua.yaml', '.aqua/aqua-checksums.json', '.limen/aqua.yaml', '.limen/aqua-registry.yaml') }}
+          restore-keys: |
+            aqua-pkgs-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install pinned tools
+        run: aqua install --only-link
+
+      # The Go build and module caches: the lint lane's Go-built tools
+      # (tools/go.mod) compile cold on every run without this.
+      - id: gocache
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.gocache.outputs.build }}
+            ${{ steps.gocache.outputs.mod }}
+            build/cache
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.gocache.outputs.version }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ runner.arch }}-${{ steps.gocache.outputs.version }}-
+            go-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Lint
+        run: just lint
+
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install aqua (pinned, checksum-verified)
+        uses: ./.github/actions/setup-aqua
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.AQUA_ROOT_DIR }}/pkgs
+          key: aqua-pkgs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.aqua/aqua.yaml', '.aqua/aqua-checksums.json', '.limen/aqua.yaml', '.limen/aqua-registry.yaml') }}
+          restore-keys: |
+            aqua-pkgs-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install pinned tools
+        run: aqua install --only-link
+
+      # The pinned source archives, keyed on pins.yaml: a bump downloads and
+      # verifies anew, everything else is served from the cache.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/dl
+          key: sources-${{ hashFiles('pins.yaml') }}
+
+      - name: Build
+        run: just build
+      - name: Smoke-test the package
+        run: just test
+
+  # Every pin resolves. The lint and build legs link only, and a link verifies
+  # nothing: an asset that is missing from a release, or that fails its
+  # checksum, would merge green and fail at first use. One linux leg pays for
+  # the real install.
+  tools:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install aqua (pinned, checksum-verified)
+        uses: ./.github/actions/setup-aqua
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.AQUA_ROOT_DIR }}/pkgs
+          # The same key as the other legs', so they share one store, and no
+          # fallback key: a changed pin must be a real install, which is what
+          # this job exists to prove.
+          key: aqua-pkgs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.aqua/aqua.yaml', '.aqua/aqua-checksums.json', '.limen/aqua.yaml', '.limen/aqua-registry.yaml') }}
+
+      - name: Install every pinned tool
+        run: aqua install
+
   gate:
-    needs: [limen]
-    # always(), and the result asserted explicitly. Without always() a failed
+    needs: [lint, build, tools]
+    # always(), and the results asserted explicitly: without always() a failed
     # or cancelled dependency SKIPS this job instead of failing it, and a
-    # skipped required check does not block a merge — branch protection that
-    # quietly stops protecting. `needs.limen.result` is success only when
-    # every lane it ran succeeded: each verify leg, fuzz and tools.
+    # skipped required check does not block a merge.
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
     steps:
-      - name: Every lane succeeded
+      - name: Lint, build and tools succeeded
         env:
           # Via env, never interpolated into the script: the shell sees data,
           # not something the expression layer can rewrite into code.
-          RESULT: ${{ needs.limen.result }}
-        shell: bash
+          RESULT_LINT: ${{ needs.lint.result }}
+          RESULT_BUILD: ${{ needs.build.result }}
+          RESULT_TOOLS: ${{ needs.tools.result }}
         run: |
-          printf 'limen: %s\n' "$RESULT"
-          [ "$RESULT" = "success" ]
+          printf 'lint: %s\nbuild: %s\ntools: %s\n' "$RESULT_LINT" "$RESULT_BUILD" "$RESULT_TOOLS"
+          [ "$RESULT_LINT" = "success" ] && [ "$RESULT_BUILD" = "success" ] && [ "$RESULT_TOOLS" = "success" ]

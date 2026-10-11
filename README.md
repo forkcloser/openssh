@@ -1,107 +1,150 @@
-# macOS ssh-agent
+# openssh
 
-This is a very simple user launch agent for ssh-agent.
+OpenSSH for macOS with security keys built in, as one relocatable package for
+the toolchain, installed and pinned through aqua like everything
+else. Exists because Apple's OpenSSH is built without FIDO support, so an
+`sk-ssh-ed25519@openssh.com` key (a YubiKey, a Secure Enclave through a
+provider) is unusable with the system `ssh`, `ssh-agent` and `ssh-keygen`.
 
-This is typically useful if you are using a YubiKey, or otherwise want to use
-`sk-` keys, that the vanilla macOS ssh-agent does not support.
+What the package is:
 
-## TL;DR
+- **OpenSSH portable**, the client set: `ssh`, `ssh-agent`, `ssh-add`,
+  `ssh-keygen`, `scp`, `sftp`, `ssh-keyscan`, and the `ssh-sk-helper` and
+  `ssh-pkcs11-helper` they spawn. No `sshd`.
+- **Built `--without-openssl`**: ed25519 and the security-key forms, the
+  post-quantum hybrid key exchange, nothing RSA, nothing ECDSA. `ssh -V` says
+  `OpenSSH_<version>, without OpenSSL`.
+- **libfido2 and libcbor linked statically**, with LibreSSL's libcrypto under
+  libfido2 only. The binaries link the system (libSystem, libz, libresolv,
+  CoreFoundation, IOKit) and nothing else; `build.sh` refuses anything else.
+- **Apple's clang and SDK** (libedit, zlib), on the macOS runner: the
+  toolchain the readiness audit files under the rig, as curl's mac leg.
+- **A client configuration**, `etc/ssh/ssh_config`: a strict, current
+  baseline. ed25519 and its security-key and ML-DSA hybrid forms only,
+  certificates first; the post-quantum hybrid key exchanges (ML-KEM, then
+  sntrup761) ahead of X25519; ChaCha20-Poly1305 ahead of AES-256-CTR with an
+  encrypt-then-MAC SHA-512 tag. `~/.ssh/config` still comes first and
+  overrides it.
+- **The agent as a LaunchAgent**: the launch script, its plist and an
+  installer, which were this repository's whole content before the package.
+
+darwin/arm64 only: Intel Mac support was dropped, and Linux has
+distribution packages with FIDO support.
+
+## Relocation
+
+OpenSSH bakes its configuration directory and its helper paths at build
+time, which is why Homebrew's build lives in a Cellar and why Apple's reads
+`/etc/ssh`. This package carries a patch (`patches/relocate.patch`) that
+resolves both from the running executable instead: `<prefix>/etc/ssh` and
+`<prefix>/libexec`, where `<prefix>` is the directory above the binary's real
+path (`bin/` or `libexec/`), symlinks resolved. The package therefore works
+from wherever it is unpacked, aqua's versioned package directory included,
+reads its own `ssh_config` and never Apple's, and spawns its own helpers.
+`scp` and `sftp` execute the package's `ssh`, and `ssh-agent` finds the sk
+helper, without an environment variable.
+
+The patch touches twelve client-side files and is applied only to the exact
+sources it was written against (`patches/relocate.sha256`): an OpenSSH bump
+that moves one of those sites fails the build, so the patch is re-read, never
+silently half-applied.
+
+## Installing
+
+Through aqua, as a `github_release` package. The reference registry entry:
+
+```yaml
+- type: github_release
+  repo_owner: forkcloser
+  repo_name: openssh
+  description: OpenSSH with security keys built in, relocatable, darwin/arm64 (forkcloser/openssh)
+  asset: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+  format: tar.gz
+  files:
+    - name: ssh
+      src: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/ssh
+    - name: ssh-agent
+      src: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/ssh-agent
+    - name: ssh-add
+      src: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/ssh-add
+    - name: ssh-keygen
+      src: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/ssh-keygen
+    - name: ssh-keyscan
+      src: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/ssh-keyscan
+    - name: scp
+      src: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/scp
+    - name: sftp
+      src: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/sftp
+    - name: ssh-agent-install
+      src: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/ssh-agent-install
+  checksum:
+    type: github_release
+    asset: checksums.txt
+    algorithm: sha256
+  github_artifact_attestations:
+    signer_workflow: forkcloser/openssh/.github/workflows/release.yaml
+  supported_envs:
+    - darwin/arm64
+```
+
+The release publishes a GitHub Artifact Attestation for every asset, so a
+consumer verifies it (`github_artifact_attestations`) and pins the checksum
+(`checksum`) both. aqua's `bin/` then holds a proxy per file above; each
+resolves to the pinned version at every call, and the binaries find their
+package through their real path.
+
+## The agent
 
 ```bash
-# Install and start updated agent (the tap must be trusted: the formula
-# depends on farcloser/brews/openssh)
-brew tap farcloser/brews && brew trust farcloser/brews
-brew install farcloser/brews/ssh-agent
-brew services start ssh-agent
-
-# Get the socket location in profile
-printf '. "$HOME/.posh_ssh'"\n" >> ~/.profile
-. ~/.profile
-
-# Optional: retire Apple's ssh-agent. Not required — ours listens on its own
-# socket, and Apple's is socket-activated: it only ever runs when a client
-# connects to its listener, which nothing does once SSH_AUTH_SOCK points at
-# ours. `disable` covers every future login and, on macOS 26, is the only
-# lever: SIP refuses `bootout` and `kill` of an Apple LaunchAgent, so the
-# listener stays until you log out.
-launchctl disable gui/$(id -u)/com.openssh.ssh-agent
+ssh-agent-install              # ~/Library/LaunchAgents/org.forkcloser.ssh_agent.plist, started
+printf '. "$HOME/.posh_ssh"\n' >> ~/.profile   # SSH_AUTH_SOCK for your shells
+ssh-agent-install uninstall    # stop, remove, re-enable Apple's agent at the next login
 ```
 
-## Socket location
+The agent listens on `~/.ssh/agent.sock`, foreground under launchd, restarted
+by it; `~/.posh_ssh` exports `SSH_AUTH_SOCK`. The plist points at the launch
+script by the package's own path, since launchd starts it with HOME and the
+system PATH only, nothing a tool manager's proxy could resolve itself with;
+after an upgrade to a new package directory, run `ssh-agent-install` again.
+The launch script execs the `ssh-agent` beside it. Apple's
+agent is socket-activated and only ever runs when a client connects to its
+listener, which nothing does once `SSH_AUTH_SOCK` points at ours; the
+installer still disables it for the next login (SIP refuses `bootout` and
+`kill` of an Apple LaunchAgent).
 
-The agent listens on `$HOME/.ssh/agent.sock`, and `~/.posh_ssh` (written by the
-launch script) exports it as `SSH_AUTH_SOCK`.
+## Releasing
 
-It used to be `$HOME/.ssh/agent`. That path is no longer usable: OpenSSH 10 (and
-the macOS 26 system ssh-agent) put ssh-agent's own default socket in a *directory*
-at `$HOME/.ssh/agent/s.*`, and the system agent creates that directory the first
-time anything talks to it — a socket file cannot be bound over it. After upgrading,
-open a new shell (or re-source `~/.posh_ssh`) so clients pick up the new path.
+Tag `v<major>.<minor>.<p>` for OpenSSH `<major>.<minor>p<p>`: `v10.6.1` for
+10.6p1. A rebuild without an upstream bump (a library bump, a patch) is
+`v10.6.1.1`, `v10.6.1.2`: a fourth segment, never a `-suffix`, since semver
+sorts `X.Y.Z-1` *before* `X.Y.Z`. `build.sh` refuses a tag that does not name
+the pinned OpenSSH. The release workflow builds and smoke-tests the package,
+attests every asset and publishes with a `checksums.txt`; a
+`workflow_dispatch` run is the dry run (builds, publishes nothing).
 
-## Installing without using brew services
+The asset is `openssh_<version>_darwin_arm64.tar.gz`, unpacking to
+`openssh_<version>_darwin_arm64/{bin,libexec,etc/ssh,share}`, with the
+licenses of everything linked in under `share/licenses`.
 
-Be sure to either have brew and the formula `openssh` installed, or alternatively
-that you do have a compatible ssh-agent in your PATH.
+## Version bumps
 
-Git clone.
+Every source is a `pins.yaml` entry: OpenSSH from OpenBSD's CDN (watched
+through its directory index), libfido2, libcbor and LibreSSL from GitHub.
+Renovate proposes each bump alone, the checksum workflow brings the digest
+along (`limen pins refresh`), and CI builds and smoke-tests the result on
+every PR, so a bump can only go green on a source that downloads, verifies
+and builds. Merging and tagging stay human acts.
 
-Then:
+## Building
+
 ```bash
-# Install
-./install.sh destination_folder
-
-# Get the socket location in profile
-printf '. "$HOME/.posh_ssh'"\n" >> ~/.profile
-. ~/.profile
+just build   # build/dist/openssh_<version>_darwin_arm64.tar.gz (macOS arm64 only)
+just test    # the smoke test, on the package relocated to a temp dir
 ```
 
-To uninstall:
-```bash
-# Remove our service
-launchctl remove world.farcloser.ssh_agent
-# Re-enable the system service: `enable` covers the next login (SIP refuses
-# to bootstrap an Apple LaunchAgent by hand — log out and back in)
-launchctl enable gui/$(id -u)/com.openssh.ssh-agent
-```
-
-### What is this doing exactly?
-
-`./install.sh` will:
-- disable (`launchctl disable`) the system `ssh-agent` launch agent — hygiene, not a
-  requirement (ours has its own socket): it stays loaded until the next login, which is
-  when `disable` takes effect, since SIP refuses `bootout` and `kill` of an Apple LaunchAgent
-- copy the run script `farcloser-ssh-agent` into `destination_folder`
-- install and start a user launch agent in `~/Library/LaunchAgents/world.farcloser.ssh_agent.plist`
-  (the brew formula's `brew services start` does the same, minus the system-agent step —
-  hence the two `launchctl` lines in the TL;DR):
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-    <dict>
-        <key>Label</key>
-        <string>world.farcloser.ssh_agent</string>
-        <key>ProgramArguments</key>
-        <array>
-            <string>/Users/dmp/Applications/bin/farcloser-ssh-agent</string>
-            <string>/Users/dmp/Applications/homebrew/bin/ssh-agent</string>
-        </array>
-        <key>RunAtLoad</key>
-        <true/>
-        <key>KeepAlive</key>
-        <true/>
-        <key>StandardOutPath</key>
-        <string>/Users/dmp/Applications/homebrew/var/log/world.farcloser.ssh_agent-stdout.log</string>
-        <key>StandardErrorPath</key>
-        <string>/Users/dmp/Applications/homebrew/var/log/world.farcloser.ssh_agent-stderr.log</string>
-    </dict>
-</plist>
-```
-
-`./farcloser-ssh-agent` does:
-- check if it has been launched already
-- clean-up any possible socket remnant (`~/.ssh/agent.sock`, and a socket file left at the
-  old `~/.ssh/agent` path by earlier versions — never the directory the system agent keeps there)
-- write `~/.posh_ssh`, which exports `SSH_AUTH_SOCK` for your shell
-- exec the ssh-agent binary that has been passed as an argument, bound to the socket
+`just build` reads `pins.yaml`, downloads and verifies the four sources,
+builds LibreSSL, libcbor and libfido2 static, applies the relocation patch
+under its guard, configures and builds OpenSSH, keeps the client set, writes
+the configuration and the agent files, and packages. CMake comes from aqua;
+the compiler, the SDK's libedit and zlib are Xcode's; no pkg-config is used
+(libfido2 is pointed at the libraries by directory).
