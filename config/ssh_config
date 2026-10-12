@@ -3,7 +3,10 @@
 # ML-DSA hybrid forms only, certificates first for a CA-run fleet; the
 # post-quantum hybrid key exchanges ahead of plain X25519; an AEAD cipher
 # ahead of CTR with an encrypt-then-MAC tag. Every name here is one this
-# build answers to (ssh -Q kex|cipher|mac|key).
+# build answers to (ssh -Q kex|cipher|mac|key), and not every one it answers
+# to is here: P-256 is built in for the Secure Enclave key alone, and the
+# client that holds one names its list (-o PubkeyAcceptedAlgorithms=ecdsa-sha2-nistp256;
+# a +name would win over this file and extend the compiled-in defaults instead).
 
 Host *
   Compression no
