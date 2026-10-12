@@ -12,12 +12,20 @@ What the package is:
   `ssh-keygen`, `scp`, `sftp`, `ssh-keyscan`, the `ssh-sk-helper` and
   `ssh-pkcs11-helper` they spawn) and the server (`sshd` with its two
   helpers), the server off by default and user-scoped when on.
-- **Built `--without-openssl`**: ed25519 and the security-key forms, the
-  post-quantum hybrid key exchange, nothing RSA, nothing ECDSA. `ssh -V` says
-  `OpenSSH_<version>, without OpenSSL`.
-- **libfido2 and libcbor linked statically**, with LibreSSL's libcrypto under
-  libfido2 only. The binaries link the system (libSystem, libz, libresolv,
-  CoreFoundation, IOKit) and nothing else; `build.sh` refuses anything else.
+- **Built against LibreSSL's libcrypto**: ed25519 and the security-key forms,
+  the post-quantum hybrid key exchange, and ECDSA P-256, the one algorithm a
+  Secure Enclave key signs with, so the bot's enclave key (taciturn's agent)
+  authenticates through this `ssh` and no other. libcrypto brings RSA and its
+  ciphers and key exchanges along, and OpenSSH cannot compile ECDSA in and RSA
+  out; the shipped `ssh_config` keeps every one of them, P-256 included, out of
+  negotiation, and a client holding an enclave key names the list it wants:
+  `-o PubkeyAcceptedAlgorithms=ecdsa-sha2-nistp256`. Not `+ecdsa-sha2-nistp256`:
+  a `+` or `^` on the command line wins over the config file and extends
+  OpenSSH's compiled-in defaults, which would put RSA and the other curves back
+  on offer. `ssh -V` says `OpenSSH_<version>, LibreSSL <version>`.
+- **LibreSSL, libfido2 and libcbor linked statically.** The binaries link the
+  system (libSystem, libz, libresolv, CoreFoundation, IOKit) and nothing else;
+  `build.sh` refuses anything else.
 - **Apple's clang and SDK** (libedit, zlib), on the macOS runner: the
   toolchain the readiness audit files under the rig, as curl's mac leg.
 - **A client configuration**, `etc/ssh/ssh_config`: a strict, current
@@ -28,6 +36,12 @@ What the package is:
   overrides it.
 - **The agent as a LaunchAgent**: the launch script, its plist and an
   installer, which were this repository's whole content before the package.
+- **A named ad-hoc signature** on every binary: `org.forkcloser.ssh`,
+  `org.forkcloser.ssh-keygen` and so on, where the linker's own ad-hoc
+  signature carries the file name. An ad-hoc identifier proves no origin
+  (anything can sign itself that); it is the stable label an agent's peer
+  check names a binary by, next to its path, and the cdhash in that agent's
+  log is what identifies the build that asked.
 
 darwin/arm64 only: Intel Mac support was dropped, and Linux has
 distribution packages with FIDO support.
@@ -193,7 +207,8 @@ just test    # the smoke test, on the package relocated to a temp dir
 
 `just build` reads `pins.yaml`, downloads and verifies the four sources,
 builds LibreSSL, libcbor and libfido2 static, applies the relocation patch
-under its guard, configures and builds OpenSSH, keeps the client set, writes
-the configuration and the agent files, and packages. CMake comes from aqua;
+under its guard, configures and builds OpenSSH against the static LibreSSL,
+keeps the client set, writes the configuration and the agent files, signs
+each binary ad hoc under its name, and packages. CMake comes from aqua;
 the compiler, the SDK's libedit and zlib are Xcode's; no pkg-config is used
 (libfido2 is pointed at the libraries by directory).

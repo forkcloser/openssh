@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 #
 # Build the OpenSSH client set for macOS arm64 with built-in FIDO support:
-# OpenSSH portable without OpenSSL, libfido2 and libcbor linked statically,
-# LibreSSL's libcrypto statically under libfido2 only, Apple's clang, the SDK's
-# libedit and zlib. Every source is a pins.yaml entry, read back with
-# `limen pins get` and verified against its sha256 before it is unpacked.
+# OpenSSH portable against LibreSSL's libcrypto, with libfido2 and libcbor, the
+# three linked statically, Apple's clang, the SDK's libedit and zlib. libcrypto
+# is what gives the build ECDSA P-256, the one algorithm a Secure Enclave key
+# signs with; the shipped ssh_config negotiates ed25519 forms only, and a client
+# with such a key names P-256 by option. Every source is a pins.yaml entry, read
+# back with `limen pins get` and verified against its sha256 before it is
+# unpacked.
 #
 # The relocation patch makes the binaries find their configuration directory
 # and helpers under the prefix they run from (bin/.. or libexec/..), so the
@@ -103,7 +106,7 @@ cmake_static() {
 rm -rf "${deps}" "${stage}"
 mkdir -p "${deps}" "${stage}" "${dist}"
 
-echo "libressl $(pin libressl version): libcrypto for libfido2"
+echo "libressl $(pin libressl version): libcrypto for OpenSSH and libfido2"
 unpack libressl "${work}/src/libressl"
 cmake_static "${work}/src/libressl" "${work}/src/libressl/cmake-build" -DLIBRESSL_APPS=OFF -DLIBRESSL_TESTS=OFF
 
@@ -146,7 +149,9 @@ grep -q 'reloc_path' "${src}/misc.c" || { echo "relocate.patch did not apply" >&
 
 # pkg-config is not on the hermetic PATH, and configure then takes libfido2 and
 # libedit by header and library; the static libfido2 needs its own
-# dependencies named, which LIBS carries to every link. The prefix and
+# dependencies named, which LIBS carries to every link. --with-ssl-dir points
+# at the deps prefix, where libcrypto exists as the static archive alone, so
+# no shared libcrypto can be picked up. The prefix and
 # sysconfdir are the inert fixed ones: the patch resolves the paths that
 # matter at run time, and the files are installed into the stage by DESTDIR.
 (
@@ -157,9 +162,10 @@ grep -q 'reloc_path' "${src}/misc.c" || { echo "relocate.patch did not apply" >&
   LIBS="-lcbor -lcrypto -lz -framework CoreFoundation -framework IOKit" \
   PKG_CONFIG=false \
   ./configure --prefix="${install_prefix}" --sysconfdir="${install_prefix}/etc/ssh" \
-    --without-openssl --with-security-key-builtin --with-libedit --without-pam \
+    --with-ssl-dir="${deps}" --with-security-key-builtin --with-libedit --without-pam \
     > configure.log 2>&1 || { tail -n 30 configure.log >&2; exit 1; }
   grep -q 'Compiler: clang' configure.log || { echo "configure did not pick clang" >&2; exit 1; }
+  grep -q 'LibreSSL' configure.log || { echo "configure did not find LibreSSL" >&2; exit 1; }
   make -j "${jobs}" > make.log 2>&1 || { tail -n 30 make.log >&2; exit 1; }
   make install-nokeys DESTDIR="${stage}" > install.log 2>&1 || { tail -n 30 install.log >&2; exit 1; }
 )
@@ -198,6 +204,19 @@ for bin in "${stage}"/bin/* "${stage}"/sbin/* "${stage}"/libexec/*; do
         echo "${bin##*/} links outside the system" >&2
         exit 1
       }
+      ;;
+    *) ;;
+  esac
+done
+
+# A stable, named identifier on every binary's ad-hoc signature (the linker's
+# carries the file name). It proves no origin: anything can sign itself
+# org.forkcloser.ssh. It is the label a peer check names a binary by, next to
+# its path; the cdhash is what identifies the build that asked.
+for bin in "${stage}"/bin/* "${stage}"/sbin/* "${stage}"/libexec/*; do
+  case "$(file -b "${bin}")" in
+    *Mach-O*)
+      out="$(codesign -s - -f -i "org.forkcloser.${bin##*/}" "${bin}" 2>&1)" || { echo "${out}" >&2; echo "${bin##*/}: codesign failed" >&2; exit 1; }
       ;;
     *) ;;
   esac
