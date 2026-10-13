@@ -5,8 +5,10 @@
 # login session's environment, which is where GUI applications started from
 # the Dock or Spotlight take theirs (launchd's own value points at Apple's
 # agent). launchctl setenv lasts the login session, so it is done at every
-# start, not at install. Shells get the variable from their rc, which the
-# installer writes.
+# start, not at install. Shells get the variable from
+# ~/.ssh/org.forkcloser.agent.env, written here at every start too and
+# sourced by every rc the installer knows: whatever an upgrade renames, a
+# shell reads the socket actually served.
 #
 # The agent is the one beside this script, in the package's bin, found through
 # the script's real path, never through PATH: launchd gives the system's.
@@ -30,6 +32,15 @@ fi
 # keeps at ~/.ssh/agent.
 rm -f "${socket}"
 [ ! -S "${HOME}/.ssh/agent" ] || rm -f "${HOME}/.ssh/agent"
+
+# The env file shells source, 0600, replaced whole so a shell never reads a
+# half-written one. The line is derived from ${socket}, the one place the
+# name lives, with $HOME unexpanded so the file keeps tracking it.
+env_file="${HOME}/.ssh/org.forkcloser.agent.env"
+# shellcheck disable=SC2016 # the $HOME is for the shell that sources it
+(umask 077 && printf 'export SSH_AUTH_SOCK="$HOME/%s"\n' "${socket#"${HOME}/"}" > "${env_file}.tmp")
+chmod 0600 "${env_file}.tmp"
+mv -f "${env_file}.tmp" "${env_file}"
 
 # Only the account's own home publishes its socket to the login session: an
 # agent started under another HOME (a test, another user's tree) must not
