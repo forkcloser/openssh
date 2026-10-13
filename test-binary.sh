@@ -81,10 +81,11 @@ for bin in bin/ssh bin/ssh-agent bin/ssh-add bin/scp bin/sftp sbin/sshd libexec/
 done
 
 # 6. The agent starts through the launch script, on a socket under a
-# throwaway HOME, and answers ssh-add. The script runs with the system PATH,
-# as launchd runs it: a tool manager's shims are not part of that environment.
-# A throwaway HOME is not the account's, so the login session's SSH_AUTH_SOCK
-# is left alone, by the script's own guard.
+# throwaway HOME, writes the env file a shell sources, and answers ssh-add.
+# The script runs with the system PATH, as launchd runs it: a tool manager's
+# shims are not part of that environment. A throwaway HOME is not the
+# account's, so the login session's SSH_AUTH_SOCK is left alone, by the
+# script's own guard.
 home="${work}/home"
 mkdir -p "${home}"
 HOME="${home}" PATH=/usr/bin:/bin "${prefix}/libexec/ssh-agent-launchd" > "${work}/agent.log" 2>&1 &
@@ -95,6 +96,12 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
   sleep 0.5
 done
 [ -S "${home}/.ssh/org.forkcloser.agent.sock" ] || { cat "${work}/agent.log" >&2; echo "the agent did not bind its socket" >&2; exit 1; }
+env_file="${home}/.ssh/org.forkcloser.agent.env"
+# The system stat by path: the hermetic PATH's is uutils', with GNU flags.
+[ "$(/usr/bin/stat -f '%Lp' "${env_file}")" = 600 ] || { echo "the env file is not there with mode 0600" >&2; exit 1; }
+# Sourced under that HOME, as an rc would, it names the socket served.
+sourced="$(HOME="${home}" sh -c '. "$HOME/.ssh/org.forkcloser.agent.env" && printf %s "$SSH_AUTH_SOCK"')"
+[ "${sourced}" = "${home}/.ssh/org.forkcloser.agent.sock" ] || { echo "the env file names ${sourced}" >&2; exit 1; }
 # ssh-add -l exits 1 on an empty agent: the answer is in its output.
 SSH_AUTH_SOCK="${home}/.ssh/org.forkcloser.agent.sock" "${prefix}/bin/ssh-add" -l > "${work}/ssh-add.log" 2>&1 || true
 grep -q 'The agent has no identities' "${work}/ssh-add.log" || { cat "${work}/ssh-add.log" >&2; echo "ssh-add cannot talk to the agent" >&2; exit 1; }

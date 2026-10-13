@@ -115,22 +115,26 @@ ssh-agent-install              # ~/Library/LaunchAgents/org.forkcloser.ssh_agent
 ssh-agent-install uninstall    # stop and remove; GUI applications have no agent until the next login
 ```
 
-The installer appends `export SSH_AUTH_SOCK="$HOME/.ssh/org.forkcloser.agent.sock"` to the
-login shell's rc (`~/.zshrc`, `~/.bashrc` or `~/.profile`) when the line is
-not there, and says so: source the file or open a new shell. `uninstall`
-removes the line again.
+Shells take `SSH_AUTH_SOCK` from `~/.ssh/org.forkcloser.agent.env`, which
+the launch script writes at every start of the agent (mode 0600, one
+`export` line naming the socket it serves), so a socket renamed by an
+upgrade is invisible to them. The installer makes every rc it knows source
+that file, `~/.zshrc`, `~/.bashrc` and `~/.profile`, each once, guarded so a
+shell started before the agent's first run does not complain, and says so:
+open a new shell or source the file. An rc carrying the fixed `export` of an
+earlier install has it replaced. `uninstall` removes the lines and the file.
 
-The agent listens on `~/.ssh/org.forkcloser.agent.sock`, foreground under launchd, restarted
-by it. The plist points at the launch
-script by the package's own path, since launchd starts it with HOME and the
-system PATH only, nothing a tool manager's proxy could resolve itself with;
-after an upgrade to a new package directory, run `ssh-agent-install` again.
-The launch script execs the `ssh-agent` beside it, and sets
-`SSH_AUTH_SOCK` in the login session's environment too (`launchctl setenv`,
-at every start, since it lasts a login): that is where GUI applications
-started from the Dock or Spotlight take theirs, and launchd's own value
-points at Apple's agent. An application already running keeps the value it
-started with until relaunched.
+The agent listens on `~/.ssh/org.forkcloser.agent.sock`, foreground under
+launchd, restarted by it. The plist points at the launch script by the
+package's own path, since launchd starts it with HOME and the system PATH
+only, nothing a tool manager's proxy could resolve itself with; after an
+upgrade to a new package directory, run `ssh-agent-install` again. The
+launch script execs the `ssh-agent` beside it, and sets `SSH_AUTH_SOCK` in
+the login session's environment too (`launchctl setenv`, at every start,
+since it lasts a login): that is where GUI applications started from the
+Dock or Spotlight take theirs, and launchd's own value points at Apple's
+agent. An application already running keeps the value it started with until
+relaunched.
 
 Apple's agent is left alone: it listens on its own socket and only ever runs
 when a client connects there, which nothing does once `SSH_AUTH_SOCK` is

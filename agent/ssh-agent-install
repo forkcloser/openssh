@@ -2,9 +2,10 @@
 #
 # Install this package's ssh-agent as a user LaunchAgent: writes
 # ~/Library/LaunchAgents/org.forkcloser.ssh_agent.plist pointing at the
-# launch script, bootstraps it, and puts the SSH_AUTH_SOCK export into the
-# shell rc when it is not there. Apple's agent is left alone: it listens on
-# its own socket and nothing reaches it once SSH_AUTH_SOCK is ours.
+# launch script, bootstraps it, and makes every shell rc it knows source
+# ~/.ssh/org.forkcloser.agent.env, which the launch script writes at every
+# start. Apple's agent is left alone: it listens on its own socket and
+# nothing reaches it once SSH_AUTH_SOCK is ours.
 #
 # The plist names the launch script by this package's own path: launchd
 # starts it with HOME and the system PATH only, where a tool manager's proxy
@@ -20,18 +21,27 @@ label='org.forkcloser.ssh_agent'
 plist="${HOME}/Library/LaunchAgents/${label}.plist"
 logs="${HOME}/Library/Logs/org.forkcloser.ssh_agent"
 domain="gui/$(id -u)"
-# The export as it goes into the rc, unexpanded: the rc keeps tracking $HOME.
+# The line as it goes into each rc, unexpanded: the rc keeps tracking $HOME.
+# Guarded, so a shell started before the agent's first run, or after an
+# uninstall that left the rc, does not complain at every prompt. The env
+# file names the socket; this line never does, so a rename is invisible here.
+env_file="${HOME}/.ssh/org.forkcloser.agent.env"
 # shellcheck disable=SC2016 # the line is for the shell that reads it
-rc_line='export SSH_AUTH_SOCK="$HOME/.ssh/org.forkcloser.agent.sock"'
+rc_line='[ -r "$HOME/.ssh/org.forkcloser.agent.env" ] && . "$HOME/.ssh/org.forkcloser.agent.env"'
 rc_mark='# forkcloser/openssh: the agent the LaunchAgent runs'
+# What earlier installs wrote: a fixed export, replaced wherever it is found.
+# shellcheck disable=SC2016 # the line is for the shell that reads it
+old_line='export SSH_AUTH_SOCK="$HOME/.ssh/org.forkcloser.agent.sock"'
+# Every rc a shell of this account may read, not the login shell's alone:
+# the one picked by $SHELL left the others without the variable.
+rcs=("${HOME}/.zshrc" "${HOME}/.bashrc" "${HOME}/.profile")
 
-# The rc of the login shell, as limen-install picks it.
-shell_rc() {
-  case "${SHELL:-}" in
-    */zsh | zsh) echo "${HOME}/.zshrc" ;;
-    */bash | bash) echo "${HOME}/.bashrc" ;;
-    *) echo "${HOME}/.profile" ;;
-  esac
+# strip_lines <rc>: the lines the install writes, and only those, taken
+# out; written through, so an rc that is a symlink into a dotfiles tree
+# stays one.
+strip_lines() {
+  grep -vxF -e "${rc_mark}" -e "${rc_line}" -e "${old_line}" "$1" > "$1.tmp" || true
+  cat "$1.tmp" > "$1" && rm -f "$1.tmp"
 }
 
 if [ "${1:-}" = 'uninstall' ]; then
@@ -44,12 +54,16 @@ if [ "${1:-}" = 'uninstall' ]; then
   if [ "$(launchctl getenv SSH_AUTH_SOCK 2> /dev/null)" = "${HOME}/.ssh/org.forkcloser.agent.sock" ]; then
     launchctl unsetenv SSH_AUTH_SOCK 2> /dev/null || true
   fi
-  rc="$(shell_rc)"
-  if [ -f "${rc}" ] && grep -qxF -- "${rc_line}" "${rc}"; then
-    # The two lines the install wrote, and only those; written through, so
-    # an rc that is a symlink into a dotfiles tree stays one.
-    grep -vxF -e "${rc_mark}" -e "${rc_line}" "${rc}" > "${rc}.tmp" && cat "${rc}.tmp" > "${rc}" && rm -f "${rc}.tmp"
-    echo "removed ${label} and the SSH_AUTH_SOCK export from ${rc}; open a new shell"
+  rm -f "${env_file}"
+  cleaned=()
+  for rc in "${rcs[@]}"; do
+    if [ -f "${rc}" ] && grep -qxF -e "${rc_line}" -e "${old_line}" -- "${rc}"; then
+      strip_lines "${rc}"
+      cleaned+=("${rc}")
+    fi
+  done
+  if [ "${#cleaned[@]}" -gt 0 ]; then
+    echo "removed ${label} and the agent line from ${cleaned[*]}; open a new shell"
   else
     echo "removed ${label}"
   fi
@@ -70,10 +84,21 @@ sed -e "s|{LAUNCH_SCRIPT}|${script}|" -e "s|{LOG_DIR}|${logs}|" \
 
 launchctl bootstrap "${domain}" "${plist}"
 
-rc="$(shell_rc)"
-if [ -f "${rc}" ] && grep -qxF -- "${rc_line}" "${rc}"; then
-  echo "installed ${label} (${script}); ${rc} already exports SSH_AUTH_SOCK; GUI applications see the agent once relaunched"
-else
+# Each rc once: an rc that carries the line is left alone, one that carries
+# the fixed export of an earlier install has it replaced.
+written=()
+for rc in "${rcs[@]}"; do
+  if [ -f "${rc}" ] && grep -qxF -- "${rc_line}" "${rc}"; then
+    continue
+  fi
+  if [ -f "${rc}" ] && grep -qxF -- "${old_line}" "${rc}"; then
+    strip_lines "${rc}"
+  fi
   printf '\n%s\n%s\n' "${rc_mark}" "${rc_line}" >> "${rc}"
-  echo "installed ${label} (${script}); SSH_AUTH_SOCK export appended to ${rc}: run 'source ${rc}' or open a new shell; GUI applications see the agent once relaunched"
+  written+=("${rc}")
+done
+if [ "${#written[@]}" -gt 0 ]; then
+  echo "installed ${label} (${script}); the agent line appended to ${written[*]}: open a new shell, or source ${env_file}; GUI applications see the agent once relaunched"
+else
+  echo "installed ${label} (${script}); every rc already sources ${env_file}; GUI applications see the agent once relaunched"
 fi
