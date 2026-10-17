@@ -1,6 +1,5 @@
 .DS_Store
 .idea
-_*
 build/
 
 # Required by limen (book/mandatory-files.md, ".gitignore").
