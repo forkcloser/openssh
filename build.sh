@@ -108,7 +108,13 @@ mkdir -p "${deps}" "${stage}" "${dist}"
 
 echo "libressl $(pin libressl version): libcrypto for OpenSSH and libfido2"
 unpack libressl "${work}/src/libressl"
-cmake_static "${work}/src/libressl" "${work}/src/libressl/cmake-build" -DLIBRESSL_APPS=OFF -DLIBRESSL_TESTS=OFF
+# OPENSSLDIR, which libcrypto bakes in and OpenSSH never reads, defaults to
+# the absolute sysconfdir's ssl since 4.4.0, under the deps prefix in the
+# build tree; the relative one 4.3 baked, which the install resolves under
+# the prefix. Typed STRING: a PATH given on the command line is made
+# absolute against the working directory.
+cmake_static "${work}/src/libressl" "${work}/src/libressl/cmake-build" -DLIBRESSL_APPS=OFF -DLIBRESSL_TESTS=OFF \
+  -DOPENSSLDIR:STRING=etc/ssl
 
 echo "libcbor $(pin libcbor version)"
 unpack libcbor "${work}/src/libcbor"
