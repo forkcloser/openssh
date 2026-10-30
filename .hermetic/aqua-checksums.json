@@ -1,28 +1,28 @@
 {
   "checksums": [
     {
-      "id": "github_release/github.com/Kitware/CMake/v4.4.4/cmake-4.4.4-linux-aarch64.tar.gz",
-      "checksum": "A1B6CC63636A0E55C63257CF3315A8A5F129E42FADE25DB1AFEA4FF8AB06F25E",
+      "id": "github_release/github.com/Kitware/CMake/v4.4.5/cmake-4.4.5-linux-aarch64.tar.gz",
+      "checksum": "301D5063AB259577C1B57CE5490B1AAB9EA5C56DC4C822F73499553DAB94925F",
       "algorithm": "sha256"
     },
     {
-      "id": "github_release/github.com/Kitware/CMake/v4.4.4/cmake-4.4.4-linux-x86_64.tar.gz",
-      "checksum": "E5BB807F7728CB60CD8B27EBC97A2EDB469B68655F21E844A600C3575B76F5BB",
+      "id": "github_release/github.com/Kitware/CMake/v4.4.5/cmake-4.4.5-linux-x86_64.tar.gz",
+      "checksum": "ED85135C5A5135B45E50423CB406DEA04CA3338DA0B8EF3C9EDE963559680BE0",
       "algorithm": "sha256"
     },
     {
-      "id": "github_release/github.com/Kitware/CMake/v4.4.4/cmake-4.4.4-macos-universal.tar.gz",
-      "checksum": "4B7B73704B1DB9B374E5C9AB8E17AC6148B817B6396EE75CD94A852CBAC9D305",
+      "id": "github_release/github.com/Kitware/CMake/v4.4.5/cmake-4.4.5-macos-universal.tar.gz",
+      "checksum": "679E77A96B9EF9484CC6C1445255FC4F84206B48A65420EFBEDF16BDAB55FBFF",
       "algorithm": "sha256"
     },
     {
-      "id": "github_release/github.com/Kitware/CMake/v4.4.4/cmake-4.4.4-windows-arm64.zip",
-      "checksum": "ED673BBC4EB7C1E59B0407FD52F1680FC0AE3229A46B9B7B3EA9133764F07F67",
+      "id": "github_release/github.com/Kitware/CMake/v4.4.5/cmake-4.4.5-windows-arm64.zip",
+      "checksum": "B0B54EBDD3E7B9F5AD733D865541D6E0A3B774182E4318B26890221432835359",
       "algorithm": "sha256"
     },
     {
-      "id": "github_release/github.com/Kitware/CMake/v4.4.4/cmake-4.4.4-windows-x86_64.zip",
-      "checksum": "BACE36E94B31C68AB6FA295F26DFA11219E0701CF7C94B0284A7D1CB13DAC536",
+      "id": "github_release/github.com/Kitware/CMake/v4.4.5/cmake-4.4.5-windows-x86_64.zip",
+      "checksum": "326C826486D46A23CF9D5A1C9EE3A567D427BDD02C4A34071937A2A675CFF004",
       "algorithm": "sha256"
     },
     {
