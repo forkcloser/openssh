@@ -63,6 +63,8 @@ The patch touches twelve client-side files and is applied only to the exact
 sources it was written against (`patches/relocate.sha256`): an OpenSSH bump
 that moves one of those sites fails the build, so the patch is re-read, never
 silently half-applied.
+The patch is under OpenSSH's BSD-style terms (OpenSSH's `LICENCE`), not
+this repository's MIT.
 Where the package stands against OpenSSH portable, the release it builds and
 what it changes, is [`UPSTREAM.md`](./UPSTREAM.md).
 

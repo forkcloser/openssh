@@ -1,3 +1,6 @@
+The changes in this patch are under OpenSSH's BSD-style licence terms, the
+LICENCE file of the OpenSSH sources it modifies, not this repository's MIT.
+
 diff --git a/misc.c b/misc.c
 index 866f7b8..3005a2c 100644
 --- a/misc.c
