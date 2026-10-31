@@ -152,6 +152,10 @@ actual="$(cd "${src}" && cat "${patched[@]}" | sha256sum | cut -d' ' -f1)"
 # already applied.
 (cd "${src}" && patch -p1 -N) < "${root}/patches/relocate.patch" > /dev/null
 grep -q 'reloc_path' "${src}/misc.c" || { echo "relocate.patch did not apply" >&2; exit 1; }
+# After relocate.patch, which it was written against: an Include naming an
+# unset environment variable is skipped silently.
+(cd "${src}" && patch -p1 -N) < "${root}/patches/include-env.patch" > /dev/null
+grep -q 'include_names_unset_env' "${src}/readconf.c" || { echo "include-env.patch did not apply" >&2; exit 1; }
 
 # pkg-config is not on the hermetic PATH, and configure then takes libfido2 and
 # libedit by header and library; the static libfido2 needs its own
