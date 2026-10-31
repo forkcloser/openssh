@@ -1,0 +1,65 @@
+The changes in this patch are under OpenSSH's BSD-style licence terms, the
+LICENCE file of the OpenSSH sources it modifies, not this repository's MIT.
+
+An Include whose argument names an unset environment variable is skipped
+silently, at debug level, where OpenSSH logs the missing variable and the
+failed expansion at error level: a configuration read by every user of this
+ssh may name a file only some of them have. Applied after relocate.patch.
+
+--- a/readconf.c
++++ b/readconf.c
+@@ -519,6 +519,35 @@
+ }
+ 
+ /*
++ * Whether an Include argument names an environment variable, ${NAME}, that
++ * is not set. Expansion would log the missing variable at error level; the
++ * caller skips the line instead.
++ */
++static int
++include_names_unset_env(const char *arg)
++{
++	const char *p, *e;
++	char *name;
++	size_t len;
++	int unset = 0;
++
++	for (p = arg; (p = strstr(p, "${")) != NULL; p = e + 1) {
++		if ((e = strchr(p + 2, '}')) == NULL)
++			break;
++		len = (size_t)(e - (p + 2));
++		if (len == 0)
++			continue; /* ${}: expansion's own complaint */
++		name = xmalloc(len + 1);
++		memcpy(name, p + 2, len);
++		name[len] = '\0';
++		if (getenv(name) == NULL)
++			unset = 1;
++		free(name);
++	}
++	return unset;
++}
++
++/*
+  * Execute a command in a shell.
+  * Return its exit status or -1 on abnormal exit.
+  */
+@@ -2081,6 +2110,18 @@
+ 				error("%s line %d: keyword %s empty argument",
+ 				    filename, linenum, keyword);
+ 				goto out;
++			}
++			/*
++			 * An Include naming an unset environment variable is
++			 * nothing: a configuration read by every user of this
++			 * ssh may name a file only some of them have, and the
++			 * others see no complaint on every invocation.
++			 */
++			if (include_names_unset_env(arg)) {
++				debug("%.200s line %d: include %s names an unset "
++				    "environment variable, skipped",
++				    filename, linenum, arg);
++				continue;
+ 			}
+ 			/* Expand %tokens and environment variables */
+ 			if ((p = expand_match_exec_or_include_path(arg,

@@ -63,6 +63,26 @@ mkdir -p "${work}/elsewhere"
 ln -s "${prefix}/bin/ssh" "${work}/elsewhere/ssh"
 "${work}/elsewhere/ssh" -G example.com | grep -qx 'ciphers chacha20-poly1305@openssh.com,aes256-ctr' || { echo "the package's ssh_config was not read through a symlink" >&2; exit 1; }
 
+# 3b. The include gate: with SSH_CONFIG_INCLUDE naming a file, its options are
+# read ahead of the defaults (it says Compression yes, the shipped default is
+# no), wherever
+# HOME points; unset, the defaults and nothing on stderr (OpenSSH would
+# complain of the unset variable on every run without include-env.patch);
+# set to a missing file, the defaults, nothing on stderr, exit 0. env -u for
+# the unset case: a session running this test may have the variable itself.
+printf 'Compression yes\n' > "${work}/extra_config"
+SSH_CONFIG_INCLUDE="${work}/extra_config" "${prefix}/bin/ssh" -G example.com > "${work}/include.txt" 2> "${work}/include.err"
+grep -qx 'compression yes' "${work}/include.txt" || { echo "the SSH_CONFIG_INCLUDE file was not read" >&2; exit 1; }
+mkdir -p "${work}/elsewhere-home"
+HOME="${work}/elsewhere-home" SSH_CONFIG_INCLUDE="${work}/extra_config" "${prefix}/bin/ssh" -G example.com > "${work}/include-home.txt" 2> "${work}/include-home.err"
+grep -qx 'compression yes' "${work}/include-home.txt" || { echo "the SSH_CONFIG_INCLUDE file was not read with HOME elsewhere" >&2; exit 1; }
+env -u SSH_CONFIG_INCLUDE "${prefix}/bin/ssh" -G example.com > "${work}/no-include.txt" 2> "${work}/no-include.err"
+grep -qx 'compression no' "${work}/no-include.txt" || { echo "an option was read without SSH_CONFIG_INCLUDE" >&2; exit 1; }
+grep -v 'Pseudo-terminal' "${work}/no-include.err" | grep -q . && { echo "ssh -G without SSH_CONFIG_INCLUDE printed to stderr:" >&2; cat "${work}/no-include.err" >&2; exit 1; }
+SSH_CONFIG_INCLUDE="${work}/no-such-config" "${prefix}/bin/ssh" -G example.com > "${work}/include-missing.txt" 2> "${work}/include-missing.err" || { echo "a missing SSH_CONFIG_INCLUDE file is an error" >&2; exit 1; }
+grep -qx 'compression no' "${work}/include-missing.txt" || { echo "a missing SSH_CONFIG_INCLUDE file changed the options" >&2; exit 1; }
+grep -v 'Pseudo-terminal' "${work}/include-missing.err" | grep -q . && { echo "ssh -G with a missing SSH_CONFIG_INCLUDE file printed to stderr:" >&2; cat "${work}/include-missing.err" >&2; exit 1; }
+
 # 4. scp executes the package's ssh, not a baked path.
 # scp fails (nothing listens); its log is what is checked, from a file: under
 # pipefail a grep -q that stops reading would fail the pipeline on its own.

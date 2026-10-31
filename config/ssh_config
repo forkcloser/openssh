@@ -8,6 +8,12 @@
 # client that holds one names its list (-o PubkeyAcceptedAlgorithms=ecdsa-sha2-nistp256;
 # a +name would win over this file and extend the compiled-in defaults instead).
 
+# An extra client configuration named by SSH_CONFIG_INCLUDE is read ahead of the defaults
+# below when the variable is set; unset, the line is nothing (patches/include-env.patch:
+# OpenSSH would complain of the unset variable on every run). Above Host *: the first
+# obtained value wins.
+Include ${SSH_CONFIG_INCLUDE}
+
 Host *
   Compression no
   ForwardAgent no
