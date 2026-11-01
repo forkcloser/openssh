@@ -68,16 +68,27 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-hermetic
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
           merge-multiple: true
-      - name: Checksums
-        run: cd dist && sha256sum -- *.tar.gz > checksums.txt
+      # The policy's companions (limen's book/releasing.md): one SPDX JSON SBOM
+      # per archive by syft from the toolset, checksums.txt over archives and
+      # SBOMs, and cosign's keyless bundle over checksums.txt, the workflow's
+      # identity, Rekor-logged.
+      - name: SBOMs, checksums and the signature
+        run: just release-assets dist
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           # Everything published, including checksums.txt — no unattested asset.
-          subject-path: dist/*
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.sbom.json
+            dist/checksums.txt
       - name: Publish release
         # `just do release vX.Y.Z` creates the release page right after pushing
         # the tag (this repository has no .release-go.yaml), so the page is
