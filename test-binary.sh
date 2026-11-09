@@ -13,6 +13,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# The shipped ssh_config includes the file SSH_CONFIG_INCLUDE names, and a
+# session of the rig runs with one set that pins its own algorithms: the test
+# is of the shipped config alone, and 3b sets the variable itself where the
+# include is what is tested.
+unset SSH_CONFIG_INCLUDE
+
 openssh_version="$(limen pins get openssh version)"
 libressl_version="$(limen pins get libressl version)"
 package_version="${PACKAGE_VERSION:-${openssh_version/p/.}}"
