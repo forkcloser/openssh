@@ -68,12 +68,19 @@ unpack() {
 }
 
 openssh_version="$(pin openssh version)"
-package_version="${PACKAGE_VERSION:-${openssh_version/p/.}}"
+openssh_release="${openssh_version/p/.}"
+package_version="${PACKAGE_VERSION:-${openssh_release}}"
 # The tag names the OpenSSH it packages: its first three segments are the
-# pinned version's, a fourth is a rebuild (10.6.1.2).
-[ "${package_version%.*.*.*}" = "${package_version}" ] && [ "${package_version#"${openssh_version/p/.}"}" = "" ] ||
-  [ "${package_version%.*}" = "${openssh_version/p/.}" ] ||
-  { echo "PACKAGE_VERSION ${package_version} is not the pinned OpenSSH ${openssh_version} (${openssh_version/p/.} or ${openssh_version/p/.}.N)" >&2; exit 1; }
+# pinned version's, a fourth, digits only, is a rebuild (10.6.1.2). ".rc1",
+# a trailing dot, or a version that merely starts with the pin is refused.
+case "${package_version#"${openssh_release}"}" in
+  "") ;;
+  . | .*[!0-9]*) package_version_ok="" ;;
+  .*) ;;
+  *) package_version_ok="" ;;
+esac
+[ "${package_version_ok-set}" = "set" ] ||
+  { echo "PACKAGE_VERSION ${package_version} is not the pinned OpenSSH ${openssh_version} (${openssh_release} or ${openssh_release}.N)" >&2; exit 1; }
 
 export MACOSX_DEPLOYMENT_TARGET=15.0
 export CC=clang
