@@ -125,6 +125,46 @@ aqua's `bin/` then holds a proxy per file above; each resolves to the pinned
 version at every call, and the binaries find their package through their real
 path.
 
+### Verifying a release
+
+The attestation's signer is the lane, not this repository, so `gh
+attestation verify` needs the signer named; with `--repo` alone it fails.
+The same command covers the archive, its SBOM and `checksums.txt`:
+
+```sh
+gh attestation verify openssh_<version>_darwin_arm64.tar.gz --repo forkcloser/openssh \
+  --signer-workflow farcloser/limen/.github/workflows/limen-release-apple.yaml
+```
+
+The keyless signature over `checksums.txt`, for a verifier with cosign and
+no `gh`; the identity is the lane at the commit the release called, the
+calling repository is an extension of the certificate:
+
+```sh
+cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/farcloser/limen/\.github/workflows/limen-release-apple\.yaml@' \
+  --certificate-github-workflow-repository forkcloser/openssh
+sha256sum -c checksums.txt
+```
+
+Every binary in the archive is signed with the Developer ID, hardened
+runtime, timestamped, identified as `org.forkcloser.<name>`:
+
+```sh
+codesign -dvv bin/ssh
+codesign -d --entitlements - bin/ssh
+```
+
+`ssh`, `ssh-keygen`, `ssh-pkcs11-helper` and `ssh-sk-helper` carry
+`com.apple.security.cs.disable-library-validation`, since they load a
+PKCS#11 provider or a security-key middleware the user names; the others
+carry no entitlement. None is notarized: aqua's download, like `curl` and
+`tar`, sets no quarantine attribute, so Gatekeeper never consults a
+notarization for these. A copy saved with a browser does carry the
+attribute, and is refused at its first run until `xattr -d
+com.apple.quarantine` removes it.
+
 ## The agent
 
 ```bash
