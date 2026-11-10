@@ -1,105 +1,42 @@
-# Release lane for openssh (custom — this repo packages a C project, so the
-# canonical goreleaser lane does not apply; same construction rules:
-# SHA-pinned first-party actions only, minimal per-job permissions, bash
-# everywhere).
-#
-# A pushed v* tag builds the package on the macOS runner, smoke-tests it,
-# generates a GitHub Artifact Attestation for every asset (aqua verifies these
-# natively on install), and publishes the release with a checksums.txt for
-# aqua's checksum pinning. The tag names the version the package carries:
-# v10.6.1 for OpenSSH 10.6p1, v10.6.1.N for a rebuild of it; build.sh refuses
-# a tag that does not name the pinned OpenSSH.
-#
-# workflow_dispatch is the DRY RUN: the build leg runs and uploads its
-# workflow artifact, and the publish job is skipped (tag refs only).
+# DO NOT EDIT MANUALLY: content-pinned by limen, reset by `limen fix`;
+# the uses: reference is Renovate's.
+# The Apple release lane: `just do release vX.Y.Z` verifies the tree, creates
+# the SIGNED tag and pushes it; that push runs limen-release-apple.yaml from
+# farcloser/limen at the referenced commit (book/releasing.md). Its sign job
+# holds the release environment's credentials and runs this project's
+# `package`; its publish job holds none and runs `just do release --ci`. Pair
+# with the limen:tags ruleset: the tag push is the release button.
 name: release
 
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions: {}
 
+# One run PER TAG, never cancelled: keyed by ref, not a constant — a constant
+# group keeps only the newest pending run, so pushing several tags at once
+# silently cancels the older releases.
 concurrency:
-  group: ${{ github.workflow }}
-
-defaults:
-  run:
-    shell: bash
+  group: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
-  build:
-    # darwin arm64 only — Intel Mac support was dropped.
-    runs-on: macos-15
-    timeout-minutes: 60
+  release:
+    uses: farcloser/limen/.github/workflows/limen-release-apple.yaml@092caf349f0f7b442b90e1e81b882aef683cc6cf # v0.25.0
+    # What the called jobs need, publish's being the larger: the release and
+    # its assets, keyless signing, the provenance attestations.
     permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-hermetic
-      - run: hermetic install --only-link
-      - name: Build
-        env:
-          # The tag, without its v; a dispatch builds the default version.
-          PACKAGE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-        run: |
-          export PACKAGE_VERSION="${PACKAGE_VERSION#v}"
-          just build
-          just test
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: dist
-          path: build/dist/*.tar.gz
-
-  publish:
-    # Tag pushes only: a workflow_dispatch run is a dry run — it proves the
-    # build and stops here.
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      # Publish the release and its assets.
       contents: write
-      # GitHub Artifact Attestations (keyless provenance; aqua verifies).
       id-token: write
       attestations: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-hermetic
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          path: dist
-          merge-multiple: true
-      # The policy's companions (limen's book/releasing.md): one SPDX JSON SBOM
-      # per archive by syft from the toolset, checksums.txt over archives and
-      # SBOMs, and cosign's keyless bundle over checksums.txt, the workflow's
-      # identity, Rekor-logged.
-      - name: SBOMs, checksums and the signature
-        run: just release-assets dist
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          # Everything published, including checksums.txt — no unattested asset.
-          subject-path: |
-            dist/*.tar.gz
-            dist/*.sbom.json
-            dist/checksums.txt
-      - name: Publish release
-        # `just do release vX.Y.Z` creates the release page right after pushing
-        # the tag (this repository has no .release-go.yaml), so the page is
-        # usually there before this job runs: then the assets are attached to
-        # it. A tag pushed by hand has no page yet: then it is created here.
-        # Either way the assets land once; --clobber makes a rerun idempotent.
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber dist/*
-          else
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --verify-tag --generate-notes dist/*
-          fi
+    # By name, never inherit: inherit reaches a lane in another organization
+    # with nothing. A name the caller's scope lacks still reaches the called
+    # sign job, which declares the release environment and resolves it there;
+    # a run on any other ref is refused them.
+    secrets:
+      APPLE_DEVELOPER_ID_P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+      APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+      APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+      APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+      APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+      APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}

@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# goreleaser builds nothing here (book/releasing.md, the Apple release lane):
+# the lane's sign job runs `just package <version>` into .build/assets/ (the
+# archive build.sh makes, Developer ID signed, smoke-tested, its SBOM beside
+# it), and its publish job runs `just do release --ci`, which verifies what
+# arrived (`just verify-assets`), writes checksums.txt over it, signs that
+# keyless and publishes. Local dry run: `just package 10.6.1`, then
+# `PACKAGE_VERSION=10.6.1 just do release --local --dry-run`.
+version: 2
+
+project_name: openssh
+
+# limen's model: under .build/, covered by the canonical .gitignore.
+dist: .build/release
+
+before:
+  hooks:
+    - just verify-assets {{ .Version }}
+
+# No Go build: the asset is build.sh's.
+builds:
+  - id: no-go-build
+    skip: true
+
+snapshot:
+  # A dry run looks for the archive `package` made under PACKAGE_VERSION;
+  # goreleaser's own -SNAPSHOT-<sha> would not find it. Unset, 0.0.0, which
+  # verify-assets refuses by name.
+  version_template: '{{ if index .Env "PACKAGE_VERSION" }}{{ .Env.PACKAGE_VERSION }}{{ else }}0.0.0{{ end }}'
+
+# The archive is an extra file, not a goreleaser archive, so there is no
+# archive to catalog here: the SBOM is made beside it by `package`.
+archives: []
+
+checksum:
+  name_template: checksums.txt
+  extra_files:
+    - glob: .build/assets/*.tar.gz
+    - glob: .build/assets/*.sbom.json
+
+signs:
+  - cmd: just
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args:
+      - do
+      - release-sign
+      - "${artifact}"
+      - "${signature}"
+
+release:
+  extra_files:
+    - glob: .build/assets/*.tar.gz
+    - glob: .build/assets/*.sbom.json
+  prerelease: auto
+  replace_existing_artifacts: true
+
+changelog:
+  use: github-native

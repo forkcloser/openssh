@@ -189,10 +189,21 @@ grep -q 'Permission denied (publickey)' "${work}/ssh-p256-unasked.out" || { cat 
 grep -qx 'p256-ok' "${work}/ssh-p256.out" || { echo "no session with the P-256 key" >&2; exit 1; }
 grep -q 'Accepted publickey.*ECDSA' "${work}/sshd.log" || { cat "${work}/sshd.log" >&2; echo "sshd did not log the P-256 login" >&2; exit 1; }
 
-# 9. Every binary carries its named ad-hoc signature.
-for bin in bin/ssh bin/ssh-keygen bin/ssh-agent bin/ssh-add bin/scp bin/sftp sbin/sshd libexec/ssh-sk-helper libexec/sshd-session; do
+# 9. Every binary carries its named signature: ad hoc in a local build, the
+# Developer ID's in a release (verify-assets asserts which). On a Developer ID
+# build the four binaries that dlopen a user-named library carry the
+# entitlement that turns library validation off, and no other binary does.
+for bin in bin/ssh bin/ssh-keygen bin/ssh-agent bin/ssh-add bin/scp bin/sftp bin/ssh-keyscan sbin/sshd libexec/ssh-sk-helper libexec/ssh-pkcs11-helper libexec/sshd-session libexec/sftp-server; do
   codesign -d -v "${prefix}/${bin}" 2> "${work}/codesign.txt"
   grep -qx "Identifier=org.forkcloser.${bin##*/}" "${work}/codesign.txt" || { cat "${work}/codesign.txt" >&2; echo "${bin} is not signed as org.forkcloser.${bin##*/}" >&2; exit 1; }
+  if grep -q '^Authority=Developer ID Application' "${work}/codesign.txt"; then
+    case "${bin##*/}" in
+      ssh | ssh-keygen | ssh-pkcs11-helper | ssh-sk-helper) want=1 ;;
+      *) want=0 ;;
+    esac
+    have="$(codesign -d --entitlements - --xml "${prefix}/${bin}" 2> /dev/null | grep -c 'com.apple.security.cs.disable-library-validation' || true)"
+    [ "${have}" = "${want}" ] || { echo "${bin}: library validation entitlement present ${have} time(s), want ${want}" >&2; exit 1; }
+  fi
 done
 
 echo "✓ smoke: ${version} · sk-ed25519 · P-256 on request only · relocatable · scp → own ssh · agent runs · sshd logs this user in, ed25519 and P-256 · signed org.forkcloser.*"

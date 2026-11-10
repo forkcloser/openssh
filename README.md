@@ -9,9 +9,9 @@ provider) is unusable with the system `ssh`, `ssh-agent` and `ssh-keygen`.
 What the package is:
 
 - **OpenSSH portable**: the client set (`ssh`, `ssh-agent`, `ssh-add`,
-  `ssh-keygen`, `scp`, `sftp`, `ssh-keyscan`, the `ssh-sk-helper` and
-  `ssh-pkcs11-helper` they spawn) and the server (`sshd` with its two
-  helpers), the server off by default and user-scoped when on.
+  `ssh-keygen`, `scp`, `sftp`, `ssh-keyscan`, the `ssh-sk-helper` they spawn
+  and the `ssh-pkcs11-helper` the agent spawns) and the server (`sshd` with
+  its two helpers), the server off by default and user-scoped when on.
 - **Built against LibreSSL's libcrypto**: ed25519 and the security-key forms,
   the post-quantum hybrid key exchange, and ECDSA P-256, the one algorithm a
   Secure Enclave key signs with, so the bot's enclave key (taciturn's agent)
@@ -36,12 +36,19 @@ What the package is:
   overrides it.
 - **The agent as a LaunchAgent**: the launch script, its plist and an
   installer, which were this repository's whole content before the package.
-- **A named ad-hoc signature** on every binary: `org.forkcloser.ssh`,
+- **A Developer ID signature** on every released binary, hardened runtime on
+  and timestamped, under a stable identifier: `org.forkcloser.ssh`,
   `org.forkcloser.ssh-keygen` and so on, where the linker's own ad-hoc
-  signature carries the file name. An ad-hoc identifier proves no origin
-  (anything can sign itself that); it is the stable label an agent's peer
-  check names a binary by, next to its path, and the cdhash in that agent's
-  log is what identifies the build that asked.
+  signature carries the file name. An agent's peer check (taciturn's) binds a
+  binary by code requirement, anchor apple generic, the team's OU and that
+  identifier; the cdhash in the agent's log identifies the build that asked.
+  A local build is ad hoc signed under the same identifiers, which proves no
+  origin. The hardened runtime's library validation is turned off, by
+  entitlement, on the four binaries that load a library a user names, `ssh`
+  and `ssh-keygen` (a PKCS#11 provider, in-process), `ssh-pkcs11-helper` (the
+  same, for the agent) and `ssh-sk-helper` (a security-key middleware); the
+  rest of the hardened runtime stays on all of them. Not notarized: hermetic's
+  download carries no quarantine attribute, so Gatekeeper is not in the path.
 
 darwin/arm64 only: Intel Mac support was dropped, and Linux has
 distribution packages with FIDO support.
@@ -104,16 +111,19 @@ Through aqua, as a `github_release` package. The reference registry entry:
     asset: checksums.txt
     algorithm: sha256
   github_artifact_attestations:
-    signer_workflow: forkcloser/openssh/.github/workflows/release.yaml
+    signer_workflow: farcloser/limen/.github/workflows/limen-release-apple.yaml
   supported_envs:
     - darwin/arm64
 ```
 
 The release publishes a GitHub Artifact Attestation for every asset, so a
 consumer verifies it (`github_artifact_attestations`) and pins the checksum
-(`checksum`) both. aqua's `bin/` then holds a proxy per file above; each
-resolves to the pinned version at every call, and the binaries find their
-package through their real path.
+(`checksum`) both. The signer is limen's Apple release lane, the reusable
+workflow this repository's `release.yaml` calls: an attestation names the
+reusable workflow as its signer and the calling repository in its extensions.
+aqua's `bin/` then holds a proxy per file above; each resolves to the pinned
+version at every call, and the binaries find their package through their real
+path.
 
 ## The agent
 
@@ -192,9 +202,18 @@ Tag `v<major>.<minor>.<p>` for OpenSSH `<major>.<minor>p<p>`: `v10.6.1` for
 10.6p1. A rebuild without an upstream bump (a library bump, a patch) is
 `v10.6.1.1`, `v10.6.1.2`: a fourth segment, never a `-suffix`, since semver
 sorts `X.Y.Z-1` *before* `X.Y.Z`. `build.sh` refuses a tag that does not name
-the pinned OpenSSH. The release workflow builds and smoke-tests the package,
-attests every asset and publishes with a `checksums.txt`; a
-`workflow_dispatch` run is the dry run (builds, publishes nothing).
+the pinned OpenSSH. `just do release vX.Y.Z` creates the signed tag and pushes
+it; the push runs limen's Apple release lane (`limen-release-apple.yaml`,
+limen's `book/releasing.md`). Its sign job, in the `release` environment that
+holds the Developer ID certificate and waits for the owner's approval, runs
+`just package <version>`: `build.sh` signs every binary with that identity,
+the smoke test runs on the relocated package, and the archive lands under
+`.build/assets/` with its SBOM. Its publish job holds no Apple secret: `just
+do release --ci` runs `verify-assets` on what arrived, writes `checksums.txt`,
+signs it keyless and publishes, and the build provenance attestation covers
+every asset. A local dry run is `just package 10.6.1` then
+`PACKAGE_VERSION=10.6.1 just do release --local --dry-run`: ad hoc signed,
+nothing published.
 
 The asset is `openssh_<version>_darwin_arm64.tar.gz`, unpacking to
 `openssh_<version>_darwin_arm64/{bin,libexec,etc/ssh,share}`, with the
@@ -219,7 +238,8 @@ just test    # the smoke test, on the package relocated to a temp dir
 `just build` reads `pins.yaml`, downloads and verifies the four sources,
 builds LibreSSL, libcbor and libfido2 static, applies the relocation patch
 under its guard, configures and builds OpenSSH against the static LibreSSL,
-keeps the client set, writes the configuration and the agent files, signs
-each binary ad hoc under its name, and packages. CMake comes from aqua;
-the compiler, the SDK's libedit and zlib are Xcode's; no pkg-config is used
-(libfido2 is pointed at the libraries by directory).
+keeps the client set, writes the configuration and the agent files, signs each
+binary under its name (Developer ID with the hardened runtime when the release
+lane exports `APPLE_SIGN_IDENTITY`, ad hoc otherwise), and packages. CMake
+comes from aqua; the compiler, the SDK's libedit and zlib are Xcode's; no
+pkg-config is used (libfido2 is pointed at the libraries by directory).
