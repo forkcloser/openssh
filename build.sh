@@ -226,18 +226,52 @@ for bin in "${stage}"/bin/* "${stage}"/sbin/* "${stage}"/libexec/*; do
   esac
 done
 
-# A stable, named identifier on every binary's ad-hoc signature (the linker's
-# carries the file name). It proves no origin: anything can sign itself
-# org.forkcloser.ssh. It is the label a peer check names a binary by, next to
-# its path; the cdhash is what identifies the build that asked.
+# Every binary is signed under a stable identifier, org.forkcloser.<name>, the
+# label a peer check names a binary by (the linker's own ad-hoc signature
+# carries the file name). With an identity exported by the Apple release lane
+# (APPLE_SIGN_IDENTITY, "Developer ID Application") the signature is that
+# identity's, hardened runtime on and timestamped, and a peer check can bind
+# the binary by code requirement: anchor apple generic, the team's OU, the
+# identifier. Without one the signature is ad hoc, which proves no origin: a
+# local build. The hardened runtime's library validation refuses a dylib not
+# signed by this team or Apple, and four binaries dlopen one a user names:
+# ssh (PKCS11Provider, -I) and ssh-keygen (-D) link ssh-pkcs11.o and load the
+# provider in-process, ssh-pkcs11-helper loads it for ssh-add and ssh-agent,
+# and ssh-sk-helper loads a SecurityKeyProvider other than the built-in one
+# (Makefile.in's SSHOBJS, SSHKEYGEN_OBJS and P11OBJS at the pinned release).
+# Those four carry the entitlement that turns library validation off; the
+# rest of the hardened runtime stays, and the other binaries load nothing
+# they are not linked against.
+identity="${APPLE_SIGN_IDENTITY:--}"
+sign_flags=()
+if [ "${identity}" != "-" ]; then
+  sign_flags=(--options runtime --timestamp)
+fi
+entitlements="${work}/loads-a-named-library.plist"
+cat > "${entitlements}" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>
+EOF
 for bin in "${stage}"/bin/* "${stage}"/sbin/* "${stage}"/libexec/*; do
   case "$(file -b "${bin}")" in
     *Mach-O*)
-      out="$(codesign -s - -f -i "org.forkcloser.${bin##*/}" "${bin}" 2>&1)" || { echo "${out}" >&2; echo "${bin##*/}: codesign failed" >&2; exit 1; }
+      flags=(${sign_flags[@]+"${sign_flags[@]}"})
+      case "${bin##*/}" in
+        ssh | ssh-keygen | ssh-pkcs11-helper | ssh-sk-helper) [ "${identity}" = "-" ] || flags+=(--entitlements "${entitlements}") ;;
+        *) ;;
+      esac
+      out="$(codesign -s "${identity}" -f ${flags[@]+"${flags[@]}"} -i "org.forkcloser.${bin##*/}" "${bin}" 2>&1)" || { echo "${out}" >&2; echo "${bin##*/}: codesign failed" >&2; exit 1; }
       ;;
     *) ;;
   esac
 done
+echo "signed every binary org.forkcloser.<name>: $([ "${identity}" = "-" ] && echo "ad hoc" || echo "${identity}, hardened runtime, timestamped")"
 
 name="openssh_${package_version}_darwin_arm64"
 rm -rf "${work:?}/${name}"
