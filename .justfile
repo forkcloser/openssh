@@ -67,7 +67,11 @@ verify-assets version:
         case "$(file -b "$bin")" in
             *Mach-O*)
                 just do apple-verify-signed "$bin"
-                codesign -d -v "$bin" 2>&1 | grep -qx "Identifier=org.forkcloser.${bin##*/}" || fail "${bin##*/} is not signed as org.forkcloser.${bin##*/}"
+                # Captured, then searched: piped straight into grep -q, which
+                # closes the pipe at its match, codesign is killed by SIGPIPE
+                # often enough under pipefail to fail a release (v10.6.1.5).
+                details=$(codesign -d -v "$bin" 2>&1) || fail "codesign -d on ${bin##*/}: $details"
+                printf '%s\n' "$details" | grep -qx "Identifier=org.forkcloser.${bin##*/}" || fail "${bin##*/} is not signed as org.forkcloser.${bin##*/}"
                 signed=$((signed + 1))
                 ;;
             *) ;;
