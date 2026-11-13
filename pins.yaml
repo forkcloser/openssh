@@ -3,9 +3,10 @@
 # back with `limen pins get <name> url|sha256` and verifies the download
 # against the digest before unpacking it; Renovate proposes the bumps from the
 # renovate: lines, and `limen pins refresh` recomputes a digest a bump left
-# behind. None of these projects signs its archives in a form limen verifies,
-# so the method is the download itself: TLS at refresh time, the digest at
-# every build after.
+# behind. LibreSSL's releases are immutable, so that archive is held to
+# GitHub's release attestation; the others sign nothing limen verifies yet
+# (OpenSSH and libfido2 publish detached PGP signatures), so their method is
+# the download itself: TLS at refresh time, the digest at every build after.
 #
 # OpenSSH portable is published on OpenBSD's CDN, not on GitHub: its entry
 # watches the directory index (the custom.openssh datasource in renovate.json)
@@ -42,7 +43,10 @@ pins:
     extract-version: ^v(?<version>\d+\.\d+\.\d+)$
     version: 4.4.0
     url: https://github.com/libressl/portable/releases/download/v${version}/libressl-${version}.tar.gz
-    verify: download
+    # LibreSSL publishes immutable releases: GitHub itself attests each asset
+    # to the release it was uploaded to, and `gh release verify-asset` holds
+    # the download to that before the digest is taken.
+    verify: github-release-asset libressl/portable v${version}
     digest:
       version: 4.4.0
       sha256: 7d02522ad5070b9adb32eb253ecabce181184a3750cf65abac0675ee908687c1
