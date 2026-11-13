@@ -3,10 +3,13 @@
 # back with `limen pins get <name> url|sha256` and verifies the download
 # against the digest before unpacking it; Renovate proposes the bumps from the
 # renovate: lines, and `limen pins refresh` recomputes a digest a bump left
-# behind. LibreSSL's releases are immutable, so that archive is held to
-# GitHub's release attestation; the others sign nothing limen verifies yet
-# (OpenSSH and libfido2 publish detached PGP signatures), so their method is
-# the download itself: TLS at refresh time, the digest at every build after.
+# behind. Each archive is held to what its project publishes for it. OpenSSH
+# and libfido2 sign their tarballs: the signature is verified against the
+# key whose fingerprint the entry pins, the key's URL being transport and the
+# fingerprint the trust. LibreSSL's releases are immutable, so that archive
+# is held to GitHub's release attestation. libcbor signs nothing, so its
+# method is the download itself: TLS at refresh time, the digest at every
+# build after.
 #
 # OpenSSH portable is published on OpenBSD's CDN, not on GitHub: its entry
 # watches the directory index (the custom.openssh datasource in renovate.json)
@@ -18,18 +21,26 @@ pins:
     versioning: regex:^(?<major>\d+)\.(?<minor>\d+)p(?<patch>\d+)$
     version: 10.6p1
     url: https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-${version}.tar.gz
-    verify: download
+    # The release key the project names on its portable page
+    # (https://www.openssh.com/portable.html), one of the keys of RELEASE_KEY.asc.
+    verify: pgp-detached https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-${version}.tar.gz.asc https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/RELEASE_KEY.asc 7168B983815A5EEF59A4ADFD2A3F414E736060BA
     digest:
       version: 10.6p1
       sha256: a9dc9565dffe8640f64d863cd29a32bc4a3dbdec0566a7fc44c5d6ee767d5f39
   - name: libfido2
     renovate: github-tags Yubico/libfido2
     version: 1.17.0
-    url: https://github.com/Yubico/libfido2/archive/refs/tags/${version}.tar.gz
-    verify: download
+    # Yubico's own tarball, the signed one: the same tree as the tag's archive.
+    # A Yubico developer signs each release with a key of their own, listed at
+    # https://developers.yubico.com/Software_Projects/Software_Signing.html by
+    # its primary key. The fingerprint here is the signing subkey's, of Ludvig
+    # Michaelsson's key 78D997D53E9C0A2A205392ED14A19784723C9988; a release
+    # another developer signs fails the refresh until this line names their key.
+    url: https://developers.yubico.com/libfido2/Releases/libfido2-${version}.tar.gz
+    verify: pgp-detached https://developers.yubico.com/libfido2/Releases/libfido2-${version}.tar.gz.sig https://keys.openpgp.org/vks/v1/by-fingerprint/78D997D53E9C0A2A205392ED14A19784723C9988 B37003FF15A068A413E50B1C3D6A49E4C4E0B673
     digest:
       version: 1.17.0
-      sha256: ace062d14a482ff9325410ff63d06c8b5fe87e79ebc18dda07add2bc0188c77f
+      sha256: c1012c8871d71b65872fd5ff1a9d6b0838a55683a03e85ba97479ce57129c736
   - name: libcbor
     renovate: github-tags PJK/libcbor
     version: v0.14.0
