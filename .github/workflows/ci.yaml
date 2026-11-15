@@ -113,6 +113,15 @@ jobs:
         run: just build
       - name: Smoke-test the package
         run: just test
+      # Kept a week: two runs of one commit are compared from these, and a
+      # red smoke test is read from the package it failed on.
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: build/dist/*.tar.gz
+          retention-days: 7
+          if-no-files-found: ignore
 
   # Every pin resolves. The lint and build legs link only, and a link verifies
   # nothing: an asset that is missing from a release, or that fails its
