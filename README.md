@@ -24,8 +24,10 @@ What the package is:
   OpenSSH's compiled-in defaults, which would put RSA and the other curves back
   on offer. `ssh -V` says `OpenSSH_<version>, LibreSSL <version>`.
 - **LibreSSL, libfido2 and libcbor linked statically.** The binaries link the
-  system (libSystem, libz, libresolv, CoreFoundation, IOKit) and nothing else;
-  `build.sh` refuses anything else.
+  system and nothing else: libSystem, libz, libresolv, CoreFoundation and
+  IOKit in every one, libedit and libncurses in `sftp`, libsandbox in `sshd`
+  and its two helpers. The list is `config/system-libraries`; `build.sh`
+  refuses a library it does not name.
 - **Apple's clang and SDK** (libedit, zlib), on the macOS runner: the
   toolchain the readiness audit files under the rig, as curl's mac leg.
 - **A client configuration**, `etc/ssh/ssh_config`: a strict, current
@@ -73,6 +75,10 @@ silently half-applied. A second patch (`patches/include-env.patch`) makes an
 `Include` that names an unset environment variable nothing, where OpenSSH
 complains of it on every run; the shipped `ssh_config` uses it to read an
 extra client configuration named by `SSH_CONFIG_INCLUDE` ahead of its defaults, when set.
+The variable holds a path as it is: a `~` the shell did not expand (a value
+quoted, or set in a launchd plist) is refused by OpenSSH, which takes no
+tilde in a system configuration's `Include`, and every `ssh` then stops with
+"bad include path", as it does on a file it cannot read.
 Both patches are under OpenSSH's BSD-style terms (OpenSSH's `LICENCE`), not
 this repository's MIT.
 Where the package stands against OpenSSH portable, the release it builds and

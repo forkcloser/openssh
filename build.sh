@@ -212,15 +212,24 @@ install -m 0644 "${work}/src/libfido2/LICENSE" "${stage}/share/licenses/libfido2
 install -m 0644 "${work}/src/libcbor/LICENSE.md" "${stage}/share/licenses/libcbor"
 install -m 0644 "${work}/src/libressl/COPYING" "${stage}/share/licenses/libressl"
 
-# Every binary links the system only: a path into the build tree is a static
-# library that did not get linked in, or a dylib that leaked.
+# Every binary links the system's libraries config/system-libraries names
+# and no other: a path into the build tree is a static library that did not
+# get linked in, or a dylib that leaked, and a system library not in the
+# list is one nobody decided on.
+# The list has to be there, and otool has to have answered: a grep that
+# cannot read its patterns, or is given nothing, reports no library, which
+# reads as a pass.
+[ -s "${root}/config/system-libraries" ] || { echo "no config/system-libraries to hold the binaries to" >&2; exit 1; }
 for bin in "${stage}"/bin/* "${stage}"/sbin/* "${stage}"/libexec/*; do
   case "$(file -b "${bin}")" in
     *Mach-O*)
-      otool -L "${bin}" | sed 1d | awk '{print $1}' | grep -v -E '^(/usr/lib/|/System/Library/Frameworks/)' && {
-        echo "${bin##*/} links outside the system" >&2
+      linked="$(otool -L "${bin}" | sed 1d | awk '{print $1}')"
+      [ -n "${linked}" ] || { echo "${bin##*/}: otool lists no library" >&2; exit 1; }
+      if unlisted="$(printf '%s\n' "${linked}" | grep -v -x -F -f "${root}/config/system-libraries")"; then
+        printf '%s\n' "${unlisted}" >&2
+        echo "${bin##*/} links a library config/system-libraries does not name" >&2
         exit 1
-      }
+      fi
       ;;
     *) ;;
   esac

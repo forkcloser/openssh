@@ -106,6 +106,27 @@ for bin in bin/ssh bin/ssh-agent bin/ssh-add bin/scp bin/sftp sbin/sshd libexec/
   fi
 done
 
+# 5b. Every Mach-O of the package, found in the tree and not from a list,
+# links the libraries config/system-libraries names and no other; and the
+# README, which gives that list to a reader, names each of them.
+while read -r file; do
+  case "$(file -b "${file}")" in
+    *Mach-O*)
+      if otool -L "${file}" | sed 1d | awk '{print $1}' | grep -v -x -F -f config/system-libraries > "${work}/unlisted.txt"; then
+        cat "${work}/unlisted.txt" >&2
+        echo "${file#"${prefix}/"} links a library config/system-libraries does not name" >&2
+        exit 1
+      fi
+      ;;
+    *) ;;
+  esac
+done < <(find "${prefix}" -type f)
+while read -r library; do
+  short="${library##*/}"
+  short="${short%%.*}"
+  grep -q "${short}" README.md || { echo "the README does not name ${short}, which config/system-libraries lists" >&2; exit 1; }
+done < config/system-libraries
+
 # 6. The agent starts through the launch script, on a socket under a
 # throwaway HOME, writes the env file a shell sources, and answers ssh-add.
 # The script runs with the system PATH, as launchd runs it: a tool manager's

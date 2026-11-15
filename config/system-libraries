@@ -1,0 +1,8 @@
+/usr/lib/libSystem.B.dylib
+/usr/lib/libz.1.dylib
+/usr/lib/libresolv.9.dylib
+/usr/lib/libedit.3.dylib
+/usr/lib/libncurses.5.4.dylib
+/usr/lib/libsandbox.1.dylib
+/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation
+/System/Library/Frameworks/IOKit.framework/Versions/A/IOKit
