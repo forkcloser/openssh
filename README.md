@@ -270,7 +270,13 @@ nothing published.
 
 The asset is `openssh_<version>_darwin_arm64.tar.gz`, unpacking to
 `openssh_<version>_darwin_arm64/{bin,sbin,libexec,etc/ssh,share}`, with the
-licenses of everything linked in under `share/licenses`.
+licenses of everything linked in under `share/licenses`: each project's own
+file (OpenSSH, LibreSSL, libfido2, libcbor) and `NOTICES`, which `notices.sh`
+takes from the sources themselves, one of each notice their comments state. A
+project's file is its summary and can be short of what its sources ask to be
+reproduced; a source whose terms the script does not know, or a line of one
+that states a copyright the script did not read into a notice, stops the build. One source names its
+author and no terms: they are written out in `config/notices`.
 
 ## Version bumps
 
