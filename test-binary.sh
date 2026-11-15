@@ -142,6 +142,19 @@ while read -r library; do
   grep -q "${short}" README.md || { echo "the README does not name ${short}, which config/system-libraries lists" >&2; exit 1; }
 done < config/system-libraries
 
+# 5d. Every Mach-O is built for the macOS the README promises: its load
+# command gives 15.0 as the oldest system it runs on, and the README says so.
+grep -q 'macOS 15\.0 and later' README.md || { echo "the README does not state macOS 15.0 and later" >&2; exit 1; }
+while read -r file; do
+  case "$(file -b "${file}")" in
+    *Mach-O*)
+      minos="$(otool -l "${file}" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "minos" { print $2; exit }')"
+      [ "${minos}" = 15.0 ] || { echo "${file#"${prefix}/"} is built for macOS ${minos:-<none>}, the README says 15.0" >&2; exit 1; }
+      ;;
+    *) ;;
+  esac
+done < <(find "${prefix}" -type f)
+
 # 6. The agent starts through the launch script, on a socket under a
 # throwaway HOME, writes the env file a shell sources, and answers ssh-add.
 # The script runs with the system PATH, as launchd runs it: a tool manager's

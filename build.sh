@@ -73,6 +73,8 @@ package_version="${PACKAGE_VERSION:-${openssh_release}}"
 # The tag names the OpenSSH it packages, or a rebuild of it.
 "${root}/package-version.sh" "${openssh_release}" "${package_version}"
 
+# The oldest macOS the binaries load on. The README states it and the smoke
+# test reads it back from each of them.
 export MACOSX_DEPLOYMENT_TARGET=15.0
 export CC=clang
 # __FILE__ in a static library (LibreSSL's assertion sites) and in OpenSSH is
