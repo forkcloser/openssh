@@ -35,6 +35,12 @@ old_line='export SSH_AUTH_SOCK="$HOME/.ssh/org.forkcloser.agent.sock"'
 # Every rc a shell of this account may read, not the login shell's alone:
 # the one picked by $SHELL left the others without the variable.
 rcs=("${HOME}/.zshrc" "${HOME}/.bashrc" "${HOME}/.profile")
+# bash as a login shell reads the first of ~/.bash_profile, ~/.bash_login and
+# ~/.profile that exists, and no ~/.bashrc: one of the first two that is
+# there gets the line too. Never created: it would take ~/.profile's place.
+for rc in "${HOME}/.bash_profile" "${HOME}/.bash_login"; do
+  [ ! -f "${rc}" ] || rcs+=("${rc}")
+done
 
 # strip_lines <rc>: the lines the install writes, and only those, taken
 # out; written through, so an rc that is a symlink into a dotfiles tree

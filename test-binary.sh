@@ -232,6 +232,44 @@ sourced="$(HOME="${home}" sh -c '. "$HOME/.ssh/org.forkcloser.agent.env" && prin
 SSH_AUTH_SOCK="${home}/.ssh/org.forkcloser.agent.sock" "${prefix}/bin/ssh-add" -l > "${work}/ssh-add.log" 2>&1 || true
 grep -q 'The agent has no identities' "${work}/ssh-add.log" || { cat "${work}/ssh-add.log" >&2; echo "ssh-add cannot talk to the agent" >&2; exit 1; }
 
+# 6b. The installer makes a bash login shell find the agent whichever file
+# that shell reads: ~/.profile where it is alone, the ~/.bash_profile that
+# is there, the ~/.bash_login that is there without one; neither of the two
+# is ever created. Under a throwaway
+# HOME each, with the env file the launch script wrote above (its line is
+# relative to HOME), and a launchctl that does nothing first on the PATH
+# launchd gives: nothing is loaded into this account's session. The shell
+# starts without the variable, or the one this test runs with would answer.
+# Uninstall takes the lines out again and leaves what the user wrote.
+mkdir -p "${work}/stub"
+printf '#!/bin/sh\nexit 0\n' > "${work}/stub/launchctl"
+chmod 0755 "${work}/stub/launchctl"
+for kind in plain profile login; do
+  rc_home="${work}/home-${kind}"
+  mkdir -p "${rc_home}/.ssh"
+  cp "${env_file}" "${rc_home}/.ssh/org.forkcloser.agent.env"
+  written=("${rc_home}/.zshrc" "${rc_home}/.bashrc" "${rc_home}/.profile")
+  own=
+  [ "${kind}" = plain ] || own="${rc_home}/.bash_${kind}"
+  if [ -n "${own}" ]; then
+    printf 'export KEPT=1\n' > "${own}"
+    written+=("${own}")
+  fi
+  HOME="${rc_home}" PATH="${work}/stub:/usr/bin:/bin" "${prefix}/bin/ssh-agent-install" > /dev/null
+  # shellcheck disable=SC2016 # the variable is the login shell's to expand
+  seen="$(env -u SSH_AUTH_SOCK HOME="${rc_home}" /bin/bash -l -c 'printf %s "${SSH_AUTH_SOCK:-}"' 2> /dev/null)"
+  [ "${seen}" = "${rc_home}/.ssh/org.forkcloser.agent.sock" ] || { echo "a bash login shell (${kind}) has SSH_AUTH_SOCK '${seen}' after ssh-agent-install" >&2; exit 1; }
+  for made in "${rc_home}/.bash_profile" "${rc_home}/.bash_login"; do
+    [ "${made}" = "${own}" ] || [ ! -e "${made}" ] || { echo "ssh-agent-install (${kind}) created ${made##*/}" >&2; exit 1; }
+  done
+  HOME="${rc_home}" PATH="${work}/stub:/usr/bin:/bin" "${prefix}/bin/ssh-agent-install" uninstall > /dev/null
+  if grep -q 'org.forkcloser' "${written[@]}"; then
+    echo "ssh-agent-install uninstall (${kind}) left its line in an rc" >&2
+    exit 1
+  fi
+  [ -z "${own}" ] || grep -qx 'export KEPT=1' "${own}" || { echo "ssh-agent-install uninstall took the user's line out of ${own##*/}" >&2; exit 1; }
+done
+
 # 7. The server, as this user, on an ephemeral port: the shipped sshd_config
 # is read from the package (no -f: the relocated default), the config test
 # passes with a fresh host key, and a login with a key from a throwaway
