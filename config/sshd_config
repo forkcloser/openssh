@@ -30,9 +30,12 @@ LoginGraceTime 30s
 MaxSessions 10
 MaxStartups 3:100:4
 
-# A shell and sftp, nothing tunnelled.
+# A shell and sftp, nothing forwarded. DisableForwarding is the one that
+# holds: it covers every kind, a unix socket's included, which no option
+# below names and which stays on by default.
 PermitTTY yes
 Subsystem sftp internal-sftp
+DisableForwarding yes
 AllowAgentForwarding no
 AllowTcpForwarding no
 GatewayPorts no

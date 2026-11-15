@@ -208,6 +208,48 @@ if [ -z "${logged_in}" ] || ! grep -qx 'session-ok' "${work}/ssh.out"; then
 fi
 grep -q 'Accepted publickey.*ED25519' "${work}/sshd.log" || { cat "${work}/sshd.log" >&2; echo "sshd did not log the ed25519 login" >&2; exit 1; }
 
+# 7b. The server runs on what the shipped sshd_config states: every option
+# of the file is in `sshd -T`, as written, whatever the letters' case. Five
+# are printed in another notation than the file's: a listener with its port,
+# a time in seconds, a size in bytes, TCPKeepAlive's no as false, and
+# AcceptEnv one name a line.
+"${prefix}/sbin/sshd" -T -h "${work}/hostkey" | tr '[:upper:]' '[:lower:]' > "${work}/sshd-T.txt"
+grep -v -e '^#' -e '^$' "${prefix}/etc/ssh/sshd_config" | tr '[:upper:]' '[:lower:]' > "${work}/sshd-stated.txt"
+while read -r key value; do
+  case "${key}" in
+    listenaddress)
+      case "${value}" in *:*) value="[${value}]:22" ;; *) value="${value}:22" ;; esac
+      ;;
+    logingracetime) value="${value%s}" ;;
+    rekeylimit) value="1073741824 3600" ;;
+    tcpkeepalive) [ "${value}" != no ] || value=false ;;
+    acceptenv)
+      # Into an array: a bare ${value} would have the shell match lc_* against
+      # the working directory's files.
+      read -r -a names <<< "${value}"
+      for name in "${names[@]}"; do
+        grep -qxF "${key} ${name}" "${work}/sshd-T.txt" || { echo "sshd -T does not have '${key} ${name}', which sshd_config states" >&2; exit 1; }
+      done
+      continue
+      ;;
+    *) ;;
+  esac
+  grep -qxF "${key} ${value}" "${work}/sshd-T.txt" || { echo "sshd -T does not have '${key} ${value}', which sshd_config states" >&2; exit 1; }
+done < "${work}/sshd-stated.txt"
+
+# 7c. Nothing is forwarded, a unix socket no more than a port: the server
+# refuses the listener a client asks it for, and the client, told to stop on
+# a forward it cannot have, stops.
+forward=(-F "${prefix}/etc/ssh/ssh_config" -p "${port}" -i "${work}/id" -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o StrictHostKeyChecking=no -o "UserKnownHostsFile=${work}/known_hosts" -o ConnectTimeout=2 -o ExitOnForwardFailure=yes)
+for listener in "${work}/forwarded.sock:127.0.0.1:9" "127.0.0.1:0:127.0.0.1:9"; do
+  if "${prefix}/bin/ssh" "${forward[@]}" -R "${listener}" "$(id -un)@127.0.0.1" 'echo forwarded' > "${work}/forward.out" 2>&1; then
+    cat "${work}/forward.out" >&2
+    echo "the server forwarded ${listener}" >&2
+    exit 1
+  fi
+  grep -qi 'forwarding failed' "${work}/forward.out" || { cat "${work}/forward.out" >&2; echo "the refusal of ${listener} was not a forwarding refusal" >&2; exit 1; }
+done
+
 # 8. The P-256 key, the enclave key's path: refused by the shipped config
 # alone, accepted once the client names it, through libcrypto on both sides.
 common=(-F "${prefix}/etc/ssh/ssh_config" -p "${port}" -i "${work}/id_p256" -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o StrictHostKeyChecking=no -o "UserKnownHostsFile=${work}/known_hosts" -o ConnectTimeout=2)
