@@ -19,7 +19,7 @@ pins:
     renovate: custom.openssh openssh
     extract-version: ^openssh-(?<version>\d+\.\d+p\d+)\.tar\.gz$
     versioning: regex:^(?<major>\d+)\.(?<minor>\d+)p(?<patch>\d+)$
-    version: 10.6p1
+    version: 10.6p2
     url: https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-${version}.tar.gz
     # The release key the project names on its portable page
     # (https://www.openssh.com/portable.html), one of the keys of RELEASE_KEY.asc.
