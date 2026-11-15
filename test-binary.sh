@@ -203,17 +203,25 @@ done < <(find "${prefix}" -type f)
 # The script runs with the system PATH, as launchd runs it: a tool manager's
 # shims are not part of that environment. A throwaway HOME is not the
 # account's, so the login session's SSH_AUTH_SOCK is left alone, by the
-# script's own guard.
+# script's own guard. Its stderr is where the LaunchAgent's plist puts it,
+# appended as launchd appends, onto a log already past the size the script
+# keeps.
 home="${work}/home"
-mkdir -p "${home}"
-HOME="${home}" PATH=/usr/bin:/bin "${prefix}/libexec/ssh-agent-launchd" > "${work}/agent.log" 2>&1 &
+agent_log="${home}/Library/Logs/org.forkcloser.ssh_agent/stderr.log"
+mkdir -p "${agent_log%/*}"
+head -c 4194305 /dev/zero > "${agent_log}"
+HOME="${home}" PATH=/usr/bin:/bin "${prefix}/libexec/ssh-agent-launchd" > "${work}/agent.log" 2>> "${agent_log}" &
 agent=$!
 trap 'kill "${agent}" 2>/dev/null; rm -rf "${work}"' EXIT
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   [ -S "${home}/.ssh/org.forkcloser.agent.sock" ] && break
   sleep 0.5
 done
-[ -S "${home}/.ssh/org.forkcloser.agent.sock" ] || { cat "${work}/agent.log" >&2; echo "the agent did not bind its socket" >&2; exit 1; }
+[ -S "${home}/.ssh/org.forkcloser.agent.sock" ] || { cat "${work}/agent.log" "${agent_log}" >&2; echo "the agent did not bind its socket" >&2; exit 1; }
+# The full log was set aside and the agent writes to a new one: a rename
+# alone would leave it writing to the old.
+[ "$(/usr/bin/stat -f '%z' "${agent_log}.1")" -ge 4194305 ] || { echo "the launch script did not set the full stderr.log aside" >&2; exit 1; }
+[ "$(/usr/bin/stat -f '%z' "${agent_log}")" -lt 4194305 ] || { echo "the agent still writes to the full stderr.log" >&2; exit 1; }
 env_file="${home}/.ssh/org.forkcloser.agent.env"
 # The system stat by path: the hermetic PATH's is uutils', with GNU flags.
 [ "$(/usr/bin/stat -f '%Lp' "${env_file}")" = 600 ] || { echo "the env file is not there with mode 0600" >&2; exit 1; }
@@ -263,6 +271,39 @@ if [ -z "${logged_in}" ] || ! grep -qx 'session-ok' "${work}/ssh.out"; then
   exit 1
 fi
 grep -q 'Accepted publickey.*ED25519' "${work}/sshd.log" || { cat "${work}/sshd.log" >&2; echo "sshd did not log the ed25519 login" >&2; exit 1; }
+
+# 7a. The agent logs every sign request, in its stderr.log: a login through
+# it names the key, the server's host key and the user, and the ssh that
+# asked by the cdhash codesign reports for that file and by its real path; a
+# signature that is not a login says so; a request it refuses has its line
+# too. The key leaves the agent afterwards: the checks below are of keys
+# given by file.
+agent_sock="${home}/.ssh/org.forkcloser.agent.sock"
+fingerprint() { "${prefix}/bin/ssh-keygen" -lf "$1" | awk '{ print $2 }'; }
+cdhash() { codesign -d -vvv "$1" 2>&1 | awk -F= '$1 == "CDHash" { print $2 }'; }
+SSH_AUTH_SOCK="${agent_sock}" "${prefix}/bin/ssh-add" -q "${work}/id"
+"${prefix}/bin/ssh" -F "${prefix}/etc/ssh/ssh_config" -p "${port}" -i "${work}/id.pub" -o IdentitiesOnly=yes -o "IdentityAgent=${agent_sock}" -o BatchMode=yes -o StrictHostKeyChecking=no -o "UserKnownHostsFile=${work}/known_hosts" -o ConnectTimeout=2 "$(id -un)@127.0.0.1" true 2> "${work}/ssh.err" ||
+  { cat "${work}/ssh.err" "${agent_log}" >&2; echo "no login with the key the agent holds" >&2; exit 1; }
+SSH_AUTH_SOCK="${agent_sock}" "${prefix}/bin/ssh-add" -T "${work}/id.pub" > /dev/null 2>&1 || { echo "the agent did not sign for ssh-add -T" >&2; exit 1; }
+if SSH_AUTH_SOCK="${agent_sock}" "${prefix}/bin/ssh-add" -T "${work}/id_p256.pub" > /dev/null 2>&1; then
+  echo "the agent signed with a key it does not hold" >&2
+  exit 1
+fi
+SSH_AUTH_SOCK="${agent_sock}" "${prefix}/bin/ssh-add" -q -D
+ssh_real="$(readlink -f "${prefix}/bin/ssh")"
+add_real="$(readlink -f "${prefix}/bin/ssh-add")"
+[ "$(cdhash "${ssh_real}" | grep -cE '^[0-9a-f]{40}$')" = 1 ] || { echo "codesign gives no cdhash for ${ssh_real}" >&2; exit 1; }
+# The time and the pid are the fields the test cannot know, and the time
+# has one shape. OpenSSH ends a line on stderr with a carriage return before
+# the newline.
+tr -d '\r' < "${agent_log}" | sed -E -e 's/ at [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z key / at T key /' -e 's/ by pid [0-9]+ / by pid N /' > "${work}/agent-signs.txt"
+for line in \
+  "sign ok at T key ED25519 $(fingerprint "${work}/id.pub") to hostkey ED25519 $(fingerprint "${work}/hostkey.pub") user $(id -un) by pid N cdhash $(cdhash "${ssh_real}") path ${ssh_real}" \
+  "sign ok at T key ED25519 $(fingerprint "${work}/id.pub") to - (not a login) by pid N cdhash $(cdhash "${add_real}") path ${add_real}" \
+  "sign refused at T key ECDSA $(fingerprint "${work}/id_p256.pub") to - (not a login) by pid N cdhash $(cdhash "${add_real}") path ${add_real}"; do
+  grep -qxF -- "${line}" "${work}/agent-signs.txt" || { cat "${agent_log}" >&2; echo "the agent's log has no line: ${line}" >&2; exit 1; }
+done
+[ "$(grep -c '^sign ' "${agent_log}")" = 3 ] || { cat "${agent_log}" >&2; echo "the agent's log does not have one line a request" >&2; exit 1; }
 
 # 7b. The server runs on what the shipped sshd_config states: every option
 # of the file is in `sshd -T`, as written, whatever the letters' case. Five

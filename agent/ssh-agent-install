@@ -75,6 +75,8 @@ script="$(cd "${self}/../libexec" && pwd -P)/ssh-agent-launchd"
 [ -x "${script}" ] || { echo "ssh-agent-install: no launch script at ${script}" >&2; exit 1; }
 
 mkdir -p "${HOME}/Library/LaunchAgents" "${logs}"
+# The agent's log names the hosts and accounts signed in to.
+chmod 0700 "${logs}"
 
 # Already running under this label: stop it, so the new plist is what starts.
 launchctl bootout "${domain}/${label}" 2> /dev/null || true

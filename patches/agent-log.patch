@@ -1,0 +1,186 @@
+The changes in this patch are under OpenSSH's BSD-style licence terms, the
+LICENCE file of the OpenSSH sources it modifies, not this repository's MIT.
+
+ssh-agent writes one line at INFO for every sign request, granted or not,
+where OpenSSH logs a refusal's reason and nothing of a signature it gives:
+the time, the key, for a login the host key of the session the client bound
+and the user asked for, and the process the request came from (pid, cdhash
+of its code signature, executable path), which is the one that last used
+the connection when the request was read. macOS only, by the calls it
+makes. Applied after relocate.patch.
+
+--- a/ssh-agent.c
++++ b/ssh-agent.c
+@@ -64,6 +64,7 @@
+ #include <unistd.h>
+ #include <util.h>
+ #include <pwd.h>
++#include <libproc.h>
+ 
+ #include "xmalloc.h"
+ #include "ssh.h"
+@@ -835,8 +836,140 @@
+ 	if (timingsafe_bcmp(sshbuf_ptr(a), sshbuf_ptr(b), sshbuf_len(a)) != 0)
+ 		return SSH_ERR_INVALID_FORMAT;
+ 	return 0;
++}
++
++/*
++ * One field of a sign-request line: what the peer chose (a user name, the
++ * path of its executable) cannot end the line or start another field, and
++ * past max bytes is cut, with dots to say so. Not with a backslash: the
++ * logger doubles those.
++ */
++static char *
++log_field(const char *s, size_t max)
++{
++	size_t i, n = 0;
++	char *ret = xmalloc(3 * max + 4);
++
++	for (i = 0; s[i] != '\0' && i < max; i++) {
++		if ((u_char)s[i] <= ' ' || (u_char)s[i] >= 0x7f ||
++		    s[i] == '%' || s[i] == '\\')
++			n += snprintf(ret + n, 4, "%%%02X", (u_char)s[i]);
++		else
++			ret[n++] = s[i];
++	}
++	if (s[i] != '\0')
++		n += snprintf(ret + n, 4, "...");
++	ret[n] = '\0';
++	return ret;
++}
++
++/* libSystem has it; no header declares it. */
++extern int csops_audittoken(pid_t, unsigned int, void *, size_t,
++    audit_token_t *);
++#define AGENT_CS_OPS_CDHASH	5
++#define AGENT_CDHASH_LEN	20
++/* What audit_token_to_pid() returns; libbsm has it, libSystem does not. */
++#define AGENT_TOKEN_PID(t)	((pid_t)(t).val[5])
++
++/*
++ * The process a request is taken to come from, for the sign-request log:
++ * its pid, the cdhash of its code signature, the path of its executable.
++ * The kernel keeps no record of who connected: LOCAL_PEERTOKEN is the token,
++ * made when asked for, of the process that last used the other end. So it
++ * is asked as soon as a request has been read, never at accept(2), where it
++ * names whoever touched the descriptor last before any request, nor once
++ * the request is answered, which a confirmation or a touch makes seconds
++ * later. The three values are of one process, all from the one token.
++ */
++static char *
++peer_describe(int fd)
++{
++	audit_token_t token;
++	socklen_t len = sizeof(token);
++	u_char cdhash[AGENT_CDHASH_LEN];
++	char path[PROC_PIDPATHINFO_MAXSIZE], hex[2 * AGENT_CDHASH_LEN + 1];
++	char *epath, *ret;
++	size_t i;
++
++	if (getsockopt(fd, SOL_LOCAL, LOCAL_PEERTOKEN, &token, &len) == -1 ||
++	    len != sizeof(token))
++		return xstrdup("pid - cdhash - path -");
++	strlcpy(hex, "-", sizeof(hex));
++	if (csops_audittoken(AGENT_TOKEN_PID(token), AGENT_CS_OPS_CDHASH,
++	    cdhash, sizeof(cdhash), &token) == 0) {
++		for (i = 0; i < sizeof(cdhash); i++)
++			snprintf(hex + 2 * i, 3, "%02x", cdhash[i]);
++	}
++	if (proc_pidpath_audittoken(&token, path, sizeof(path)) <= 0)
++		strlcpy(path, "-", sizeof(path));
++	epath = log_field(path, sizeof(path));
++	xasprintf(&ret, "pid %ld cdhash %s path %s",
++	    (long)AGENT_TOKEN_PID(token), hex, epath);
++	free(epath);
++	return ret;
+ }
+ 
++/*
++ * One line for every sign request, granted or not: when, the key, what
++ * for, and who asked. A login names its user in the signed data and its
++ * host by the session the client bound to this connection; anything else
++ * signed (a file, a commit) is not a login and has neither. The logger
++ * cuts a line at about a thousand bytes: the user is bounded and the path
++ * comes last, so that neither can push another field off the line.
++ */
++static void
++log_sign_request(const SocketEntry *e, const struct sshkey *key,
++    struct sshbuf *data, int ok, const char *peer)
++{
++	char *fp = NULL, *hfp = NULL, *user = NULL, *euser = NULL;
++	char *dest = NULL, when[32];
++	struct sshbuf *sid = NULL;
++	const struct hostkey_sid *hks = NULL;
++	time_t now = time(NULL);
++	struct tm tm;
++	size_t i;
++
++	if (gmtime_r(&now, &tm) == NULL ||
++	    strftime(when, sizeof(when), "%Y-%m-%dT%H:%M:%SZ", &tm) == 0)
++		strlcpy(when, "-", sizeof(when));
++	if (key != NULL) {
++		if ((fp = sshkey_fingerprint(key, SSH_FP_HASH_DEFAULT,
++		    SSH_FP_DEFAULT)) == NULL)
++			fatal_f("fingerprint failed");
++		if (parse_userauth_request(data, key, &user, &sid, NULL) == 0)
++			euser = log_field(user, 64);
++	}
++	if (euser == NULL) {
++		dest = xstrdup("- (not a login)");
++	} else {
++		for (i = 0; i < e->nsession_ids; i++) {
++			if (buf_equal(sid, e->session_ids[i].sid) == 0)
++				hks = &e->session_ids[i];
++		}
++		if (hks == NULL) {
++			xasprintf(&dest, "hostkey - user %s", euser);
++		} else {
++			if ((hfp = sshkey_fingerprint(hks->key,
++			    SSH_FP_HASH_DEFAULT, SSH_FP_DEFAULT)) == NULL)
++				fatal_f("fingerprint failed");
++			xasprintf(&dest, "%shostkey %s %s user %s",
++			    hks->forwarded || hks != &e->session_ids[0] ?
++			    "forwarded " : "", sshkey_type(hks->key), hfp,
++			    euser);
++		}
++	}
++	logit("sign %s at %s key %s %s to %s by %s",
++	    ok == 0 ? "ok" : "refused", when,
++	    key == NULL ? "-" : sshkey_type(key), fp == NULL ? "-" : fp,
++	    dest, peer);
++	sshbuf_free(sid);
++	free(fp);
++	free(hfp);
++	free(user);
++	free(euser);
++	free(dest);
++}
++
+ /* ssh2 only */
+ static void
+ process_sign_request2(SocketEntry *e)
+@@ -847,6 +980,7 @@
+ 	int r, ok = -1, retried = 0;
+ 	char *fp = NULL, *pin = NULL, *prompt = NULL;
+ 	char *user = NULL, *sig_dest = NULL;
++	char *peer = peer_describe(e->fd);
+ 	const char *fwd_host = NULL, *dest_host = NULL;
+ 	struct sshbuf *msg = NULL, *data = NULL, *sid = NULL;
+ 	struct sshkey *key = NULL, *hostkey = NULL;
+@@ -969,6 +1103,7 @@
+ 	debug_f("good signature");
+  send:
+ 	notify_complete(notifier, "User presence confirmed");
++	log_sign_request(e, key, data, ok, peer);
+ 
+ 	if (ok == 0) {
+ 		if ((r = sshbuf_put_u8(msg, SSH2_AGENT_SIGN_RESPONSE)) != 0 ||
+@@ -989,6 +1124,7 @@
+ 	free(signature);
+ 	free(sig_dest);
+ 	free(user);
++	free(peer);
+ 	free(prompt);
+ 	if (pin != NULL)
+ 		freezero(pin, strlen(pin));

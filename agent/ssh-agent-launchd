@@ -52,4 +52,19 @@ if [ -n "${account_home}" ] && [ "${HOME}" = "${account_home}" ]; then
   launchctl setenv SSH_AUTH_SOCK "${socket}" 2> /dev/null || true
 fi
 
+# The agent's log is launchd's to open, appending, and nobody's to bound:
+# past 4 MB it becomes stderr.log.1, replacing the one before, and this
+# process moves to a new file. Only when stderr is that file: a start from a
+# shell writes to the shell's. The descriptor is reopened, not the file
+# renamed alone: a rename leaves the agent writing to stderr.log.1 for as
+# long as it runs.
+# The system stat by path: with no file named it describes its standard
+# input, here the descriptor itself.
+log="${HOME}/Library/Logs/org.forkcloser.ssh_agent/stderr.log"
+if [ -f "${log}" ] && [ "$(/usr/bin/stat -f '%d:%i' <&2)" = "$(/usr/bin/stat -f '%d:%i' "${log}")" ] &&
+  [ "$(/usr/bin/stat -f '%z' "${log}")" -gt 4194304 ]; then
+  mv -f "${log}" "${log}.1"
+  exec 2>> "${log}"
+fi
+
 exec "${agent}" -D -a "${socket}"

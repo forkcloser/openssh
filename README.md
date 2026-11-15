@@ -86,8 +86,11 @@ The variable holds a path as it is: a `~` the shell did not expand (a value
 quoted, or set in a launchd plist) is refused by OpenSSH, which takes no
 tilde in a system configuration's `Include`, and every `ssh` then stops with
 "bad include path", as it does on a file it cannot read.
-Both patches are under OpenSSH's BSD-style terms (OpenSSH's `LICENCE`), not
-this repository's MIT.
+A third (`patches/agent-log.patch`) makes the agent log every sign request,
+described under [The agent](#the-agent); it changes ssh-agent.c, one of the
+files the guard holds.
+The three patches are under OpenSSH's BSD-style terms (OpenSSH's `LICENCE`),
+not this repository's MIT.
 Where the package stands against OpenSSH portable, the release it builds and
 what it changes, is [`UPSTREAM.md`](./UPSTREAM.md).
 
@@ -206,6 +209,54 @@ Dock or Spotlight take theirs, and launchd's own value points at Apple's
 agent. An application already running keeps the value it started with until
 relaunched.
 
+The agent writes one line for every signature it is asked for, given or
+refused, to `~/Library/Logs/org.forkcloser.ssh_agent/stderr.log`, where
+OpenSSH's agent records nothing of a signature it gives
+(`patches/agent-log.patch`):
+
+```text
+sign ok at 2026-11-15T19:34:03Z key ED25519 SHA256:… to hostkey ED25519 SHA256:… user git by pid 4242 cdhash 3f2a… path /…/bin/ssh
+sign ok at 2026-11-15T19:35:10Z key ED25519 SHA256:… to - (not a login) by pid 4250 cdhash 91c0… path /usr/bin/ssh-keygen
+sign refused at 2026-11-15T19:36:41Z key ED25519 SHA256:… to forwarded hostkey ED25519 SHA256:… user root by pid 4261 cdhash 3f2a… path /…/bin/ssh
+```
+
+- **The time**, in UTC.
+- **The key**, by type and fingerprint: `ssh-add -l` gives the same.
+- **The destination** of a login is the server's host key, since the agent
+  is never told a host name: `ssh-keygen -lf ~/.ssh/known_hosts` lists the
+  fingerprints by name. `forwarded` says the request came through an agent
+  forwarded from another host; `hostkey -` that the client bound no session
+  (an ssh older than OpenSSH 8.9). The user is the one asked for on the
+  server, cut at 64 bytes with `...`. A signature that is not a login, a
+  file or a commit signed with `ssh-keygen -Y sign`, has neither.
+- **The process**, after `by`: its pid, the cdhash of its code signature
+  (`-` where it has none) and the path of its executable, the three of one
+  process. The cdhash is the code itself, whatever path it was run from:
+  `codesign -d -vvv <file>` prints a file's. What started that process (git,
+  an editor, a script) the agent does not know.
+- A byte the peer chose that would break a line, in a path or a user name,
+  is written `%XX`. A line is cut at about a thousand bytes, which only a
+  very long path reaches: the path is last, so nothing else is lost.
+- Each line ends with a carriage return before its newline, as every line
+  OpenSSH writes to stderr does: a pattern anchored on the line's end has to
+  allow for it.
+
+The process named is the one that last used the connection when the agent
+read the request, which is all macOS tells the far end of a socket: it keeps
+no record of who opened one. For an ssh that connects and asks, that is the
+ssh. It is not proof against the account itself: a program running as the
+account can share a connection with another program and arrange which of
+the two is named, as it can write to the log file. The log says what the
+account's own tools did, and shows a program that is not one of them using
+a key; it does not bind a program determined to be mistaken for another.
+
+The log is a record of the hosts and accounts this account signs in to, kept
+on disk. Its directory is the account's alone, which the installer makes it
+(mode 0700): the account and root read it. The launch script
+sets it aside as `stderr.log.1` when it is past 4 MB at the agent's start,
+replacing the one before, so the two hold 8 MB at most plus what one run of
+the agent adds.
+
 Apple's agent is left alone: it listens on its own socket and only ever runs
 when a client connects there, which nothing does once `SSH_AUTH_SOCK` is
 ours. To retire it anyway, as the user:
@@ -295,8 +346,8 @@ just test    # the smoke test, on the package relocated to a temp dir
 ```
 
 `just build` reads `pins.yaml`, downloads and verifies the four sources,
-builds LibreSSL, libcbor and libfido2 static, applies the relocation patch
-under its guard, configures and builds OpenSSH against the static LibreSSL,
+builds LibreSSL, libcbor and libfido2 static, applies the three patches
+under the relocation patch's guard, configures and builds OpenSSH against the static LibreSSL,
 keeps the client set, writes the configuration and the agent files, signs each
 binary under its name (Developer ID with the hardened runtime when the release
 lane exports `APPLE_SIGN_IDENTITY`, ad hoc otherwise), and packages. CMake
