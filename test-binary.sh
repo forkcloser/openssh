@@ -33,6 +33,30 @@ tar -xzf "${archive}" -C "${work}"
 # binaries report where they really are.
 prefix="$(cd "${work}/${name}" && pwd -P)"
 
+# 0. The archive is its contract: the entries config/archive-contents lists,
+# each with the mode it lists, and nothing else. Every check below that is
+# about the binaries takes them from this tree, never from a typed list: a
+# binary a list forgot is one nothing checks.
+# The system stat by path: the hermetic PATH's is uutils', with GNU flags.
+# Sorted as bytes: a locale orders "ssh-keygen" and "sshd-install" its own way.
+(cd "${prefix}" && find . -mindepth 1 | LC_ALL=C sort | while read -r entry; do
+  printf '%s %s\n' "$(/usr/bin/stat -f '%Sp' "${entry}")" "${entry#./}"
+done) > "${work}/contents.txt"
+if ! diff config/archive-contents "${work}/contents.txt" > "${work}/contents.diff"; then
+  cat "${work}/contents.diff" >&2
+  echo "the archive is not what config/archive-contents lists (<: listed, >: in the archive)" >&2
+  exit 1
+fi
+: > "${work}/binaries.txt"
+while read -r _ entry; do
+  [ -f "${prefix}/${entry}" ] || continue
+  case "$(file -b "${prefix}/${entry}")" in
+    *Mach-O*) echo "${entry}" >> "${work}/binaries.txt" ;;
+    *) ;;
+  esac
+done < config/archive-contents
+[ -s "${work}/binaries.txt" ] || { echo "no Mach-O in the archive" >&2; exit 1; }
+
 # 1. The right OpenSSH, against the pinned LibreSSL.
 version="$("${prefix}/bin/ssh" -V 2>&1)"
 echo "› ${version}"
@@ -98,13 +122,13 @@ grep -q "Executing: program ${prefix}/bin/ssh " "${work}/scp.log" || { echo "scp
 # 5. No build path survives in the binaries. strings goes to a file first:
 # under pipefail a grep -q that stops reading would fail the pipeline on a
 # match, and the if would read that as a pass.
-for bin in bin/ssh bin/ssh-agent bin/ssh-add bin/scp bin/sftp sbin/sshd libexec/sshd-session libexec/sshd-auth libexec/sftp-server; do
+while read -r bin; do
   strings "${prefix}/${bin}" > "${work}/strings.txt"
   if grep -q -E '/(build|stage|Users/runner)/' "${work}/strings.txt"; then
     echo "${bin} carries a build path" >&2
     exit 1
   fi
-done
+done < "${work}/binaries.txt"
 
 # 6. The agent starts through the launch script, on a socket under a
 # throwaway HOME, writes the env file a shell sources, and answers ssh-add.
@@ -193,7 +217,7 @@ grep -q 'Accepted publickey.*ECDSA' "${work}/sshd.log" || { cat "${work}/sshd.lo
 # Developer ID's in a release (verify-assets asserts which). On a Developer ID
 # build the four binaries that dlopen a user-named library carry the
 # entitlement that turns library validation off, and no other binary does.
-for bin in bin/ssh bin/ssh-keygen bin/ssh-agent bin/ssh-add bin/scp bin/sftp bin/ssh-keyscan sbin/sshd libexec/ssh-sk-helper libexec/ssh-pkcs11-helper libexec/sshd-session libexec/sftp-server; do
+while read -r bin; do
   codesign -d -v "${prefix}/${bin}" 2> "${work}/codesign.txt"
   grep -qx "Identifier=org.forkcloser.${bin##*/}" "${work}/codesign.txt" || { cat "${work}/codesign.txt" >&2; echo "${bin} is not signed as org.forkcloser.${bin##*/}" >&2; exit 1; }
   if grep -q '^Authority=Developer ID Application' "${work}/codesign.txt"; then
@@ -204,6 +228,6 @@ for bin in bin/ssh bin/ssh-keygen bin/ssh-agent bin/ssh-add bin/scp bin/sftp bin
     have="$(codesign -d --entitlements - --xml "${prefix}/${bin}" 2> /dev/null | grep -c 'com.apple.security.cs.disable-library-validation' || true)"
     [ "${have}" = "${want}" ] || { echo "${bin}: library validation entitlement present ${have} time(s), want ${want}" >&2; exit 1; }
   fi
-done
+done < "${work}/binaries.txt"
 
 echo "✓ smoke: ${version} · sk-ed25519 · P-256 on request only · relocatable · scp → own ssh · agent runs · sshd logs this user in, ed25519 and P-256 · signed org.forkcloser.*"

@@ -256,7 +256,7 @@ every asset. A local dry run is `just package 10.6.1` then
 nothing published.
 
 The asset is `openssh_<version>_darwin_arm64.tar.gz`, unpacking to
-`openssh_<version>_darwin_arm64/{bin,libexec,etc/ssh,share}`, with the
+`openssh_<version>_darwin_arm64/{bin,sbin,libexec,etc/ssh,share}`, with the
 licenses of everything linked in under `share/licenses`.
 
 ## Version bumps
