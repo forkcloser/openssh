@@ -2,10 +2,10 @@ The changes in this patch are under OpenSSH's BSD-style licence terms, the
 LICENCE file of the OpenSSH sources it modifies, not this repository's MIT.
 
 diff --git a/misc.c b/misc.c
-index 866f7b8..3005a2c 100644
+index d49c710..5ad1a37 100644
 --- a/misc.c
 +++ b/misc.c
-@@ -3348,3 +3348,37 @@ mkdir_path(const char *target, mode_t mode)
+@@ -3350,3 +3350,37 @@ mkdir_path(const char *target, mode_t mode)
  	return ret;
  #endif
  }
@@ -126,7 +126,7 @@ index 54ada85..f1b8bc8 100644
  	argv += optind;
  
 diff --git a/servconf.c b/servconf.c
-index 044043b..689b327 100644
+index 220d048..2454564 100644
 --- a/servconf.c
 +++ b/servconf.c
 @@ -343,7 +343,7 @@ fill_default_server_options(ServerOptions *options)
