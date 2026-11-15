@@ -228,18 +228,30 @@ index 52da28d..da393ef 100644
  	verbosity = "-vvv";
  #endif
 diff --git a/ssh.c b/ssh.c
-index fe660ef..9f7d88d 100644
+index fe660ef..976ba79 100644
 --- a/ssh.c
 +++ b/ssh.c
-@@ -586,7 +586,7 @@ process_config_files(const char *host_name, struct passwd *pw,
+@@ -585,10 +585,17 @@ process_config_files(const char *host_name, struct pas
+ 			    &options, SSHCONF_CHECKPERM | SSHCONF_USERCONF |
  			    (final_pass ? SSHCONF_FINAL : 0), want_final_pass);
  
- 		/* Read systemwide configuration file after user config. */
+-		/* Read systemwide configuration file after user config. */
 -		(void)read_config_file(_PATH_HOST_CONFIG_FILE, pw,
-+		(void)read_config_file(reloc_path("etc/ssh/ssh_config"), pw,
++		/*
++		 * Read systemwide configuration file after user config. It is
++		 * the package's own: without it this ssh would run on the
++		 * compiled-in defaults, and say nothing.
++		 */
++		if (!read_config_file(reloc_path("etc/ssh/ssh_config"), pw,
  		    host, host_name, cmd, &options,
- 		    final_pass ? SSHCONF_FINAL : 0, want_final_pass);
+-		    final_pass ? SSHCONF_FINAL : 0, want_final_pass);
++		    final_pass ? SSHCONF_FINAL : 0, want_final_pass))
++			fatal("no ssh_config under %s: this ssh reads its "
++			    "configuration from its own package (-F names "
++			    "another)", reloc_path("etc/ssh"));
  	}
+ 	free(cmd);
+ }
 diff --git a/sshconnect2.c b/sshconnect2.c
 index 265ebfc..52efe99 100644
 --- a/sshconnect2.c

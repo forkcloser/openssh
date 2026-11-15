@@ -22,5 +22,6 @@ code. What does is below.
 | Change | Where | Here |
 | --- | --- | --- |
 | Paths resolve from the running executable, `<prefix>/etc/ssh` and `<prefix>/libexec`, instead of compile-time paths, so the package runs from wherever it is unpacked and reads its own `ssh_config` | `patches/relocate.patch`, sixteen files, twelve of them the client's | https://github.com/forkcloser/openssh/pull/33 |
+| `ssh` refuses to run when its package's `ssh_config` is missing (a binary copied out of its tree), where upstream reads a missing system configuration as an empty one and runs on the compiled-in defaults; `-F` names another | `patches/relocate.patch`, ssh.c | https://github.com/forkcloser/openssh/pull/118 |
 | An `Include` naming an unset environment variable is skipped at debug level, where upstream logs two error lines on every run; the shipped `ssh_config` reads the file `SSH_CONFIG_INCLUDE` names ahead of its defaults, when set | `patches/include-env.patch`, one file, readconf.c | https://github.com/forkcloser/openssh/pull/73 |
 | Built against LibreSSL's libcrypto and libfido2, both static, without OpenSSL; every binary signed by its name | `build.sh` | https://github.com/forkcloser/openssh/pull/33, https://github.com/forkcloser/openssh/pull/40 |

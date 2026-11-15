@@ -66,6 +66,12 @@ reads its own `ssh_config` and never Apple's, and spawns its own helpers.
 `scp` and `sftp` execute the package's `ssh`, and `ssh-agent` finds the sk
 helper, without an environment variable.
 
+The configuration is the package's, so `ssh` does not run without it: a
+binary copied out of its tree finds no `etc/ssh` above it and stops, saying
+so, where OpenSSH would run on its compiled-in defaults, RSA included, in
+silence. `-F` names another configuration, and is the way to run one on
+purpose.
+
 The patch touches twelve client-side files and is applied only to the exact
 sources it was written against (`patches/relocate.sha256`): an OpenSSH bump
 that moves one of those sites fails the build, so the patch is re-read, never

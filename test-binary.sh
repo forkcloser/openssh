@@ -89,6 +89,21 @@ SSH_CONFIG_INCLUDE="${work}/no-such-config" "${prefix}/bin/ssh" -G example.com >
 grep -qx 'compression no' "${work}/include-missing.txt" || { echo "a missing SSH_CONFIG_INCLUDE file changed the options" >&2; exit 1; }
 grep -v 'Pseudo-terminal' "${work}/include-missing.err" | grep -q . && { echo "ssh -G with a missing SSH_CONFIG_INCLUDE file printed to stderr:" >&2; cat "${work}/include-missing.err" >&2; exit 1; }
 
+# 3c. Out of its tree, ssh refuses to run: a binary copied elsewhere finds no
+# etc/ssh above it, and would otherwise run on OpenSSH's compiled-in
+# defaults, RSA and all, without a word. A configuration the user names is
+# theirs to choose: -F still works there.
+mkdir -p "${work}/outside/bin"
+cp "${prefix}/bin/ssh" "${work}/outside/bin/ssh"
+if "${work}/outside/bin/ssh" -G example.com > "${work}/outside.txt" 2> "${work}/outside.err"; then
+  echo "ssh ran without its package's ssh_config" >&2
+  exit 1
+fi
+grep -q "no ssh_config under $(cd "${work}/outside" && pwd -P)/etc/ssh" "${work}/outside.err" || { cat "${work}/outside.err" >&2; echo "ssh out of its tree did not say what it lacks" >&2; exit 1; }
+"${work}/outside/bin/ssh" -F "${prefix}/etc/ssh/ssh_config" -G example.com > "${work}/outside-F.txt" 2> /dev/null || { echo "ssh out of its tree refused a configuration named with -F" >&2; exit 1; }
+grep -qx 'ciphers chacha20-poly1305@openssh.com,aes256-ctr' "${work}/outside-F.txt" || { echo "ssh out of its tree did not read the configuration named with -F" >&2; exit 1; }
+"${work}/outside/bin/ssh" -F none -G example.com > /dev/null 2>&1 || { echo "ssh out of its tree refused -F none" >&2; exit 1; }
+
 # 4. scp executes the package's ssh, not a baked path.
 # scp fails (nothing listens); its log is what is checked, from a file: under
 # pipefail a grep -q that stops reading would fail the pipeline on its own.
