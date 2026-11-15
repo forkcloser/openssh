@@ -28,6 +28,7 @@ drwxr-xr-x share/forkcloser
 -rw-r--r-- share/forkcloser/org.forkcloser.ssh_agent.plist
 -rw-r--r-- share/forkcloser/org.forkcloser.sshd.plist
 drwxr-xr-x share/licenses
+-rw-r--r-- share/licenses/NOTICES
 -rw-r--r-- share/licenses/libcbor
 -rw-r--r-- share/licenses/libfido2
 -rw-r--r-- share/licenses/libressl

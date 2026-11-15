@@ -3,12 +3,16 @@
 import '.limen/just/main.just'
 
 # The FIRST recipe defined here becomes `just`'s default.
-lint: do::lint::default package-version-test
+lint: do::lint::default package-version-test notices-test
 fix: do::fix::default
 
 # The rule that holds a tag to the pinned release, over its edges.
 package-version-test:
     ./package-version.sh --test
+
+# What has to stop the notices' build, and what must not.
+notices-test:
+    ./notices.sh --test
 
 # Build the package (macOS arm64 only): every source from pins.yaml, verified
 # by digest; the result is build/dist/openssh_<version>_darwin_arm64.tar.gz.

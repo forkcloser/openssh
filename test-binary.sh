@@ -166,6 +166,25 @@ while read -r library; do
   grep -q "${short}" README.md || { echo "the README does not name ${short}, which config/system-libraries lists" >&2; exit 1; }
 done < config/system-libraries
 
+# 5c. The notices of the sources, beside the four projects' own licence
+# files: a part for each tree linked, and holders a reading of the first
+# comment alone, or of the projects' summaries, leaves out: Otto Moerbeek
+# (two files OpenSSH and libfido2 compile where the system has neither
+# function), David Gwynne (a second notice far inside a header), Andre Lucas
+# (a notice after an include guard), Bjoern Hoehrmann (named by a source
+# that states no terms).
+notices="${prefix}/share/licenses/NOTICES"
+[ -s "${notices}" ] || { echo "no share/licenses/NOTICES in the package" >&2; exit 1; }
+for part in 'OpenSSH' 'OpenSSH openbsd-compat' 'LibreSSL libcrypto' 'LibreSSL headers' 'libfido2' 'libfido2 openbsd-compat' 'libcbor' 'libcbor, the UTF-8 decoder it compiles'; do
+  grep -qx "${part}" "${notices}" || { echo "NOTICES has no part for ${part}" >&2; exit 1; }
+done
+for holder in 'Otto Moerbeek' 'Tatu Ylonen' 'Eric Young' 'Yubico AB' 'Pavel Kalvoda' 'David Gwynne' 'Andre Lucas' 'Bjoern Hoehrmann'; do
+  grep -q "${holder}" "${notices}" || { echo "NOTICES does not name ${holder}" >&2; exit 1; }
+done
+for summary in openssh libfido2 libcbor libressl; do
+  [ -s "${prefix}/share/licenses/${summary}" ] || { echo "no share/licenses/${summary} in the package" >&2; exit 1; }
+done
+
 # 5d. Every Mach-O is built for the macOS the README promises: its load
 # command gives 15.0 as the oldest system it runs on, and the README says so.
 grep -q 'macOS 15\.0 and later' README.md || { echo "the README does not state macOS 15.0 and later" >&2; exit 1; }

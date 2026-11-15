@@ -204,6 +204,16 @@ install -m 0644 "${src}/LICENCE" "${stage}/share/licenses/openssh"
 install -m 0644 "${work}/src/libfido2/LICENSE" "${stage}/share/licenses/libfido2"
 install -m 0644 "${work}/src/libcbor/LICENSE.md" "${stage}/share/licenses/libcbor"
 install -m 0644 "${work}/src/libressl/COPYING" "${stage}/share/licenses/libressl"
+# And what the sources themselves ask to be reproduced, which those four
+# summaries are short of: OpenSSH's own tree and its compat directory (not
+# its tests), libcrypto alone of LibreSSL, since nothing else of it is linked.
+"${root}/notices.sh" "${stage}/share/licenses/NOTICES" \
+  "OpenSSH=${src}=1" "OpenSSH openbsd-compat=${src}/openbsd-compat=1" \
+  "LibreSSL libcrypto=${work}/src/libressl/crypto" "LibreSSL headers=${work}/src/libressl/include" \
+  "libfido2=${work}/src/libfido2/src" "libfido2 openbsd-compat=${work}/src/libfido2/openbsd-compat" \
+  "libcbor=${work}/src/libcbor/src" \
+  "libcbor, the UTF-8 decoder it compiles:${root}/config/notices/libcbor-utf8-decoder"
+chmod 0644 "${stage}/share/licenses/NOTICES"
 
 # Every binary links the system's libraries config/system-libraries names
 # and no other: a path into the build tree is a static library that did not
