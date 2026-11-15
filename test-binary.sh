@@ -385,6 +385,35 @@ for listener in "${work}/forwarded.sock:127.0.0.1:9" "127.0.0.1:0:127.0.0.1:9"; 
   grep -qi 'forwarding failed' "${work}/forward.out" || { cat "${work}/forward.out" >&2; echo "the refusal of ${listener} was not a forwarding refusal" >&2; exit 1; }
 done
 
+# 7d. The server's log, set aside: sshd-install does it past 4 MB, with a
+# launchctl that does nothing first on the PATH launchd gives (it answers
+# that the server is this agent's own, so port 22 is not looked at), under
+# a throwaway HOME; a log of exactly 4 MB, and a small one, stay where they
+# are. And a log set aside under a running server, which is what a rename by
+# hand does: the next connection writes to a new file, each connection
+# opening the path itself.
+mkdir -p "${work}/sshd-stub"
+printf '#!/bin/sh\nexit 0\n' > "${work}/sshd-stub/launchctl"
+chmod 0755 "${work}/sshd-stub/launchctl"
+for size in 4194305 4194304 1024; do
+  sshd_home="${work}/home-sshd-${size}"
+  sshd_log="${sshd_home}/Library/Logs/org.forkcloser.sshd/sshd.log"
+  mkdir -p "${sshd_log%/*}"
+  head -c "${size}" /dev/zero > "${sshd_log}"
+  HOME="${sshd_home}" XDG_STATE_HOME='' PATH="${work}/sshd-stub:/usr/bin:/bin:/usr/sbin:/sbin" "${prefix}/bin/sshd-install" > /dev/null
+  aside=0
+  [ ! -e "${sshd_log}.1" ] || aside="$(/usr/bin/stat -f '%z' "${sshd_log}.1")"
+  if [ "${size}" -gt 4194304 ]; then
+    if [ -e "${sshd_log}" ] || [ "${aside}" != "${size}" ]; then echo "sshd-install did not set a ${size}-byte sshd.log aside" >&2; exit 1; fi
+  else
+    if [ "${aside}" != 0 ] || [ "$(/usr/bin/stat -f '%z' "${sshd_log}")" != "${size}" ]; then echo "sshd-install set a ${size}-byte sshd.log aside" >&2; exit 1; fi
+  fi
+done
+mv "${work}/sshd.log" "${work}/sshd.log.1"
+"${prefix}/bin/ssh" -F "${prefix}/etc/ssh/ssh_config" -p "${port}" -i "${work}/id" -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o StrictHostKeyChecking=no -o "UserKnownHostsFile=${work}/known_hosts" -o ConnectTimeout=2 "$(id -un)@127.0.0.1" true 2> "${work}/ssh.err" ||
+  { cat "${work}/ssh.err" "${work}/sshd.log.1" >&2; echo "no login after the server's log was set aside" >&2; exit 1; }
+grep -q 'Accepted publickey.*ED25519' "${work}/sshd.log" 2> /dev/null || { cat "${work}/sshd.log.1" >&2; echo "the login after the log was set aside is not in a new sshd.log" >&2; exit 1; }
+
 # 8. The P-256 key, the enclave key's path: refused by the shipped config
 # alone, accepted once the client names it, through libcrypto on both sides.
 common=(-F "${prefix}/etc/ssh/ssh_config" -p "${port}" -i "${work}/id_p256" -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes -o StrictHostKeyChecking=no -o "UserKnownHostsFile=${work}/known_hosts" -o ConnectTimeout=2)

@@ -300,9 +300,12 @@ What that means:
   package path.
 - **The log** is `~/Library/Logs/org.forkcloser.sshd/sshd.log`: every
   connection to port 22, a login or a scan, at `LogLevel INFO`. Nothing
-  bounds it. Every process that writes it opens it for appending, so
-  `: > ~/Library/Logs/org.forkcloser.sshd/sshd.log` empties it under a
-  running server.
+  bounds it while the server runs. `sshd-install`, which is run again at
+  every package update, sets it aside as `sshd.log.1` when it is past 4 MB,
+  replacing the one before. Between two runs, every process that writes it
+  opens it for appending, so `: > ~/Library/Logs/org.forkcloser.sshd/sshd.log`
+  empties it under a running server; a rename sets it aside for the
+  connections that follow, each of which opens the file itself.
 - **TCC.** A session runs with the server's privacy permissions: to read
   Desktop, Documents, Downloads or other protected folders over ssh, grant
   the package's `sbin/sshd` Full Disk Access once (System Settings, Privacy &
