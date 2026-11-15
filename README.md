@@ -52,8 +52,9 @@ What the package is:
   rest of the hardened runtime stays on all of them. Not notarized: hermetic's
   download carries no quarantine attribute, so Gatekeeper is not in the path.
 
-darwin/arm64 only: Intel Mac support was dropped, and Linux has
-distribution packages with FIDO support.
+darwin/arm64 only, macOS 15.0 and later: the binaries are built for that
+system and an earlier one refuses to load them. Intel Mac support was
+dropped, and Linux has distribution packages with FIDO support.
 
 ## Relocation
 
