@@ -156,6 +156,10 @@ grep -q 'reloc_path' "${src}/misc.c" || { echo "relocate.patch did not apply" >&
 # unset environment variable is skipped silently.
 (cd "${src}" && patch -p1 -N) < "${root}/patches/include-env.patch" > /dev/null
 grep -q 'include_names_unset_env' "${src}/readconf.c" || { echo "include-env.patch did not apply" >&2; exit 1; }
+# After relocate.patch, which changes the same file: the agent logs every
+# sign request.
+(cd "${src}" && patch -p1 -N) < "${root}/patches/agent-log.patch" > /dev/null
+grep -q 'log_sign_request' "${src}/ssh-agent.c" || { echo "agent-log.patch did not apply" >&2; exit 1; }
 
 # pkg-config is not on the hermetic PATH, and configure then takes libfido2 and
 # libedit by header and library; the static libfido2 needs its own
