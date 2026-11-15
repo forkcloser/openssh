@@ -3,10 +3,15 @@
 Repackaging of [OpenSSH portable](https://www.openssh.com/portable.html), released on
 OpenBSD's CDN, built for macOS as one relocatable package.
 
-- Built from: openssh-10.6p1 (`pins.yaml`, the tarball verified by sha256)
-- Reviewed through: 10.6p1; a bump re-reads the patches below against the new sources, since
-  `patches/relocate.sha256` holds the sixteen files relocate.patch was written for, readconf.c
-  among them, and a bump that touches one fails the build before either patch applies
+- Built from: openssh-10.6p2 (`pins.yaml`, the tarball verified by sha256)
+- Reviewed through: 10.6p2, re-read 2026-11-14. Of the sixteen files relocate.patch touches,
+  10.6p2 changes two: misc.c (`mkdir_path` skips an empty path component, two lines added above
+  the patch's hunk, which moves down by them) and servconf.c (the test of the GatewayPorts
+  warning, at line 283, where the nearest hunk is at 343). Neither touches a line the patch
+  changes or reads; readconf.c, the one file include-env.patch touches, is the same file. A bump
+  re-reads the patches below against the new sources, since `patches/relocate.sha256` holds the
+  sixteen files relocate.patch was written for, readconf.c among them, and a bump that touches
+  one fails the build before either patch applies
 
 The agent, the server's launchd units, the installers and the package layout are this
 repository's own additions, described in the README; they change nothing of upstream's
