@@ -25,9 +25,9 @@ pins:
     # (https://www.openssh.com/portable.html), one of the keys of RELEASE_KEY.asc.
     verify: pgp-detached https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-${version}.tar.gz.asc https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/RELEASE_KEY.asc 7168B983815A5EEF59A4ADFD2A3F414E736060BA
     digest:
-      version: 10.6p1
-      source: b57e8a593062e117cf3c2473c4722f14662f586ef28bc2cb7b2de5d6bd42e4f0
-      sha256: a9dc9565dffe8640f64d863cd29a32bc4a3dbdec0566a7fc44c5d6ee767d5f39
+      version: 10.6p2
+      source: dd61fc24da8518f3e15b0ff938ef06cd6824c2410cdecba3ca1871f7cd4fb04d
+      sha256: 9ae44872090cf2f06b3cf9ff147e7f16f309671340763ed2f99248398ae29d5b
   - name: libfido2
     renovate: github-tags Yubico/libfido2
     version: 1.17.0
