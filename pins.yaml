@@ -26,6 +26,7 @@ pins:
     verify: pgp-detached https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-${version}.tar.gz.asc https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/RELEASE_KEY.asc 7168B983815A5EEF59A4ADFD2A3F414E736060BA
     digest:
       version: 10.6p1
+      source: b57e8a593062e117cf3c2473c4722f14662f586ef28bc2cb7b2de5d6bd42e4f0
       sha256: a9dc9565dffe8640f64d863cd29a32bc4a3dbdec0566a7fc44c5d6ee767d5f39
   - name: libfido2
     renovate: github-tags Yubico/libfido2
@@ -40,6 +41,7 @@ pins:
     verify: pgp-detached https://developers.yubico.com/libfido2/Releases/libfido2-${version}.tar.gz.sig https://keys.openpgp.org/vks/v1/by-fingerprint/78D997D53E9C0A2A205392ED14A19784723C9988 B37003FF15A068A413E50B1C3D6A49E4C4E0B673
     digest:
       version: 1.17.0
+      source: 4858c4472e9b043b6a1c7ee39acd67728375435ecfcf141e2750c90c84efd8bb
       sha256: c1012c8871d71b65872fd5ff1a9d6b0838a55683a03e85ba97479ce57129c736
   - name: libcbor
     renovate: github-tags PJK/libcbor
@@ -48,6 +50,7 @@ pins:
     verify: download
     digest:
       version: v0.14.0
+      source: 5319fae6164ef260dfd20be5920d14c0c40da989049e74203a99f8152e66c3ba
       sha256: a8c1516e741562cf95aa4479c64916c3d4d2623e24fdc35e414e2320e7300aae
   - name: libressl
     renovate: github-releases libressl/portable
@@ -60,4 +63,5 @@ pins:
     verify: github-release-asset libressl/portable v${version}
     digest:
       version: 4.4.1
+      source: adf6e8e35c09b88ab4d8635bf25405120c67f7c4908280455ef58ba213a5ce95
       sha256: 290cdf1b53c086255dc302f118b98602a444e9ae6d11e9bfdd8c9b1b60aa3a22
