@@ -203,6 +203,9 @@ that exists gets the line as well, since a bash login shell that finds one
 reads neither `~/.profile` nor `~/.bashrc`; neither is created. An rc
 carrying the fixed `export` of an earlier install has it replaced.
 `uninstall` removes the lines and the file.
+An rc the installer cannot write, of mode 0444 or linked into a read-only store, does not
+stop it: the agent is installed, the other files are written, and the closing line names the
+one that was not, with the line to add there by hand.
 
 The agent listens on `~/.ssh/org.forkcloser.agent.sock`, foreground under
 launchd, restarted by it. The plist points at the launch script by the

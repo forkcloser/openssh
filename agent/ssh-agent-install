@@ -50,6 +50,18 @@ strip_lines() {
   cat "$1.tmp" > "$1" && rm -f "$1.tmp"
 }
 
+# can_write <rc>: whether its lines can be put in or taken out. Not an rc
+# of mode 0444, nor one linked into a read-only store, which its owner
+# cannot change either; nor a link to nothing. A file that is not there is
+# made, where the home takes one.
+can_write() {
+  if [ -e "$1" ]; then
+    [ -f "$1" ] && [ -w "$1" ]
+  else
+    [ ! -L "$1" ] && [ -w "$(dirname "$1")" ]
+  fi
+}
+
 if [ "${1:-}" = 'uninstall' ]; then
   launchctl bootout "${domain}/${label}" 2> /dev/null || true
   rm -f "${plist}"
@@ -62,23 +74,52 @@ if [ "${1:-}" = 'uninstall' ]; then
   fi
   rm -f "${env_file}"
   cleaned=()
+  kept=()
+  exporting=()
   for rc in "${rcs[@]}"; do
     if [ -f "${rc}" ] && grep -qxF -e "${rc_line}" -e "${old_line}" -- "${rc}"; then
-      strip_lines "${rc}"
-      cleaned+=("${rc}")
+      if can_write "${rc}"; then
+        strip_lines "${rc}"
+        cleaned+=("${rc}")
+      elif grep -qxF -- "${old_line}" "${rc}"; then
+        exporting+=("${rc}")
+      else
+        kept+=("${rc}")
+      fi
     fi
   done
-  if [ "${#cleaned[@]}" -gt 0 ]; then
-    echo "removed ${label} and the agent line from ${cleaned[*]}; open a new shell"
-  else
-    echo "removed ${label}"
-  fi
+  said="removed ${label}"
+  [ "${#cleaned[@]}" -eq 0 ] || said="${said} and the agent line from ${cleaned[*]}; open a new shell"
+  # Of the two lines an rc may be left with: this install's is guarded, and
+  # sources nothing once the env file is gone; an earlier install's export
+  # is not, and goes on naming a socket nothing serves.
+  [ "${#kept[@]}" -eq 0 ] || said="${said}; ${kept[*]} cannot be written and keeps the agent line, which does nothing now: take it out by hand"
+  [ "${#exporting[@]}" -eq 0 ] || said="${said}; ${exporting[*]} cannot be written and still sets SSH_AUTH_SOCK, to a socket that is gone: take this line out by hand: ${old_line}"
+  echo "${said}"
   exit 0
 fi
 
 self="$(cd "$(dirname "$(readlink -f "$0")")" && pwd -P)"
 script="$(cd "${self}/../libexec" && pwd -P)/ssh-agent-launchd"
 [ -x "${script}" ] || { echo "ssh-agent-install: no launch script at ${script}" >&2; exit 1; }
+
+# Which rc gets the line, settled before anything is loaded, so that
+# nothing stops half-way: one that carries it already is left alone, one
+# that cannot be written is passed over and named at the end, with the line
+# to add by hand. The agent needs nothing from that file, so it is installed
+# all the same.
+todo=()
+skipped=()
+for rc in "${rcs[@]}"; do
+  if [ -f "${rc}" ] && grep -qxF -- "${rc_line}" "${rc}"; then
+    continue
+  fi
+  if can_write "${rc}"; then
+    todo+=("${rc}")
+  else
+    skipped+=("${rc}")
+  fi
+done
 
 mkdir -p "${HOME}/Library/LaunchAgents" "${logs}"
 # The agent's log names the hosts and accounts signed in to.
@@ -92,21 +133,18 @@ sed -e "s|{LAUNCH_SCRIPT}|${script}|" -e "s|{LOG_DIR}|${logs}|" \
 
 launchctl bootstrap "${domain}" "${plist}"
 
-# Each rc once: an rc that carries the line is left alone, one that carries
-# the fixed export of an earlier install has it replaced.
-written=()
-for rc in "${rcs[@]}"; do
-  if [ -f "${rc}" ] && grep -qxF -- "${rc_line}" "${rc}"; then
-    continue
-  fi
+# An rc that carries the fixed export of an earlier install has it replaced.
+for rc in ${todo[@]+"${todo[@]}"}; do
   if [ -f "${rc}" ] && grep -qxF -- "${old_line}" "${rc}"; then
     strip_lines "${rc}"
   fi
   printf '\n%s\n%s\n' "${rc_mark}" "${rc_line}" >> "${rc}"
-  written+=("${rc}")
 done
-if [ "${#written[@]}" -gt 0 ]; then
-  echo "installed ${label} (${script}); the agent line appended to ${written[*]}: open a new shell, or source ${env_file}; GUI applications see the agent once relaunched"
-else
-  echo "installed ${label} (${script}); every rc already sources ${env_file}; GUI applications see the agent once relaunched"
+said="installed ${label} (${script})"
+if [ "${#todo[@]}" -gt 0 ]; then
+  said="${said}; the agent line appended to ${todo[*]}: open a new shell, or source ${env_file}"
+elif [ "${#skipped[@]}" -eq 0 ]; then
+  said="${said}; every rc already sources ${env_file}"
 fi
+[ "${#skipped[@]}" -eq 0 ] || said="${said}; ${skipped[*]} cannot be written: add this line there by hand: ${rc_line}"
+echo "${said}; GUI applications see the agent once relaunched"

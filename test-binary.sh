@@ -270,6 +270,81 @@ for kind in plain profile login; do
   [ -z "${own}" ] || grep -qx 'export KEPT=1' "${own}" || { echo "ssh-agent-install uninstall took the user's line out of ${own##*/}" >&2; exit 1; }
 done
 
+# 6c. An rc the installer cannot write, of mode 0444 or linked to a file
+# that is: the agent is installed all the same, the rc files that can be
+# written are, the one that cannot is left as it was and named with the line
+# to add by hand, and the installer exits 0. A second run changes nothing
+# and names it again; uninstall does not stop on it either.
+# shellcheck disable=SC2016 # the line as the installer prints it, unexpanded
+by_hand='[ -r "$HOME/.ssh/org.forkcloser.agent.env" ] && . "$HOME/.ssh/org.forkcloser.agent.env"'
+for kind in readonly linked; do
+  rc_home="${work}/home-${kind}"
+  mkdir -p "${rc_home}/.ssh"
+  cp "${env_file}" "${rc_home}/.ssh/org.forkcloser.agent.env"
+  if [ "${kind}" = readonly ]; then
+    locked="${rc_home}/.zshrc"
+    printf '# kept\n' > "${locked}"
+    chmod 0444 "${locked}"
+  else
+    locked="${rc_home}/.bash_profile"
+    mkdir "${rc_home}/store"
+    printf '# kept\n' > "${rc_home}/store/bash_profile"
+    chmod 0444 "${rc_home}/store/bash_profile"
+    ln -s store/bash_profile "${locked}"
+  fi
+  for run in first second; do
+    said="$(HOME="${rc_home}" PATH="${work}/stub:/usr/bin:/bin" "${prefix}/bin/ssh-agent-install" 2> "${work}/install.err")" ||
+      { cat "${work}/install.err" >&2; echo "ssh-agent-install (${kind}, ${run} run) stopped on an rc it cannot write" >&2; exit 1; }
+    case "${said}" in
+      *"${locked} cannot be written: add this line there by hand: ${by_hand}"*) ;;
+      *) echo "ssh-agent-install (${kind}, ${run} run) did not name ${locked} with the line to add: ${said}" >&2; exit 1 ;;
+    esac
+    [ "$(cat "${locked}")" = '# kept' ] || { echo "ssh-agent-install (${kind}) changed an rc it cannot write" >&2; exit 1; }
+    grep -qxF -- "${by_hand}" "${rc_home}/.bashrc" || { echo "ssh-agent-install (${kind}) did not write the rc files it can" >&2; exit 1; }
+    if [ "${run}" = first ]; then
+      cksum "${rc_home}/.bashrc" "${rc_home}/.profile" > "${work}/rc.sums"
+    else
+      cksum "${rc_home}/.bashrc" "${rc_home}/.profile" | cmp -s - "${work}/rc.sums" || { echo "a second ssh-agent-install (${kind}) changed an rc" >&2; exit 1; }
+    fi
+  done
+  [ "${kind}" = readonly ] || [ -L "${locked}" ] || { echo "ssh-agent-install replaced a linked rc with a file" >&2; exit 1; }
+  # The user did as told and added the line by hand; the file is locked
+  # again. Uninstall takes its line out of the others, leaves this one as it
+  # is, names it, and does not stop.
+  target="$(readlink -f "${locked}")"
+  chmod 0644 "${target}"
+  printf '%s\n' "${by_hand}" >> "${target}"
+  chmod 0444 "${target}"
+  cksum "${target}" > "${work}/locked.sum"
+  said="$(HOME="${rc_home}" PATH="${work}/stub:/usr/bin:/bin" "${prefix}/bin/ssh-agent-install" uninstall 2> "${work}/install.err")" ||
+    { cat "${work}/install.err" >&2; echo "ssh-agent-install uninstall (${kind}) stopped on an rc it cannot write" >&2; exit 1; }
+  case "${said}" in
+    *"${locked} cannot be written and keeps the agent line"*) ;;
+    *) echo "ssh-agent-install uninstall (${kind}) did not name ${locked}: ${said}" >&2; exit 1 ;;
+  esac
+  cksum "${target}" | cmp -s - "${work}/locked.sum" || { echo "ssh-agent-install uninstall (${kind}) changed an rc it cannot write" >&2; exit 1; }
+  [ ! -e "${locked}.tmp" ] || { echo "ssh-agent-install uninstall (${kind}) left ${locked##*/}.tmp behind" >&2; exit 1; }
+  ! grep -q 'org.forkcloser' "${rc_home}/.bashrc" || { echo "ssh-agent-install uninstall (${kind}) left its line in an rc it can write" >&2; exit 1; }
+done
+# And the line an rc may be left with that is not harmless: an earlier
+# install's export, in a file that has since been locked. Uninstall says it
+# still sets the variable, and gives the line to take out.
+# shellcheck disable=SC2016 # the line as earlier installs wrote it, unexpanded
+old_export='export SSH_AUTH_SOCK="$HOME/.ssh/org.forkcloser.agent.sock"'
+rc_home="${work}/home-export"
+mkdir -p "${rc_home}"
+printf '%s\n' "${old_export}" > "${rc_home}/.profile"
+chmod 0444 "${rc_home}/.profile"
+said="$(HOME="${rc_home}" PATH="${work}/stub:/usr/bin:/bin" "${prefix}/bin/ssh-agent-install" uninstall)" || { echo "ssh-agent-install uninstall stopped on a locked rc that holds the old export" >&2; exit 1; }
+case "${said}" in
+  *"${rc_home}/.profile cannot be written and still sets SSH_AUTH_SOCK"*"${old_export}"*) ;;
+  *) echo "ssh-agent-install uninstall did not say the old export still sets the variable: ${said}" >&2; exit 1 ;;
+esac
+case "${said}" in
+  *'does nothing now'*) echo "ssh-agent-install uninstall says a live export does nothing: ${said}" >&2; exit 1 ;;
+  *) ;;
+esac
+
 # 7. The server, as this user, on an ephemeral port: the shipped sshd_config
 # is read from the package (no -f: the relocated default), the config test
 # passes with a fresh host key, and a login with a key from a throwaway
