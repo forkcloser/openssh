@@ -122,6 +122,10 @@ Through aqua, as a `github_release` package. The reference registry entry:
       src: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/sftp
     - name: ssh-agent-install
       src: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/ssh-agent-install
+    - name: sshd-install
+      src: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/sshd-install
+    - name: sshd-uninstall
+      src: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/sshd-uninstall
   checksum:
     type: github_release
     asset: checksums.txt
@@ -293,7 +297,12 @@ What that means:
 - **The host key** lives under `${XDG_STATE_HOME:-~/.local/state}/org.forkcloser.sshd/`,
   outside the package directory, so a package update keeps the server's
   identity; `sshd-install` after an update moves the server onto the new
-  package path. Logs: `~/Library/Logs/org.forkcloser.sshd/sshd.log`.
+  package path.
+- **The log** is `~/Library/Logs/org.forkcloser.sshd/sshd.log`: every
+  connection to port 22, a login or a scan, at `LogLevel INFO`. Nothing
+  bounds it. Every process that writes it opens it for appending, so
+  `: > ~/Library/Logs/org.forkcloser.sshd/sshd.log` empties it under a
+  running server.
 - **TCC.** A session runs with the server's privacy permissions: to read
   Desktop, Documents, Downloads or other protected folders over ssh, grant
   the package's `sbin/sshd` Full Disk Access once (System Settings, Privacy &
