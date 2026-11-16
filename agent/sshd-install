@@ -47,6 +47,15 @@ fi
 
 launchctl bootout "${domain}/${label}" 2> /dev/null || true
 
+# The server appends to its log for as long as it runs and nothing cuts it:
+# past 4 MB it is set aside here, with the server stopped, replacing the one
+# set aside before. Between two runs of this script the file is unbounded.
+# The system stat by path: a tool manager's may be GNU's.
+log="${logs}/sshd.log"
+if [ -f "${log}" ] && [ "$(/usr/bin/stat -f '%z' "${log}")" -gt 4194304 ]; then
+  mv -f "${log}" "${log}.1"
+fi
+
 sed -e "s|{SSHD}|${sshd}|" -e "s|{CONFIG}|${config}|" -e "s|{HOSTKEY}|${hostkey}|" -e "s|{LOG_DIR}|${logs}|" \
   "${prefix}/share/forkcloser/${label}.plist" > "${plist}"
 
