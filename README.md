@@ -194,8 +194,11 @@ the launch script writes at every start of the agent (mode 0600, one
 upgrade is invisible to them. The installer makes every rc it knows source
 that file, `~/.zshrc`, `~/.bashrc` and `~/.profile`, each once, guarded so a
 shell started before the agent's first run does not complain, and says so:
-open a new shell or source the file. An rc carrying the fixed `export` of an
-earlier install has it replaced. `uninstall` removes the lines and the file.
+open a new shell or source the file. A `~/.bash_profile` or `~/.bash_login`
+that exists gets the line as well, since a bash login shell that finds one
+reads neither `~/.profile` nor `~/.bashrc`; neither is created. An rc
+carrying the fixed `export` of an earlier install has it replaced.
+`uninstall` removes the lines and the file.
 
 The agent listens on `~/.ssh/org.forkcloser.agent.sock`, foreground under
 launchd, restarted by it. The plist points at the launch script by the
