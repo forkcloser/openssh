@@ -30,7 +30,10 @@ work="${WORK:-${root}/build}"
 deps="${work}/deps"
 stage="${work}/stage"
 dist="${work}/dist"
-jobs="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+# Every step that compiles runs under build-caps.sh's limits: BUILD_JOBS
+# parallel jobs and BUILD_TIMEOUT of wall clock, never the whole machine.
+# shellcheck source=build-caps.sh
+. "${root}/build-caps.sh"
 
 # pin <name> <field>: one value of a pins.yaml entry (version, url, sha256).
 pin() {
@@ -95,12 +98,12 @@ install_prefix="/opt/forkcloser/openssh"
 cmake_static() {
   local src="$1" bld="$2"
   shift 2
-  cmake -S "${src}" -B "${bld}" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+  capped cmake -S "${src}" -B "${bld}" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
     -DCMAKE_C_FLAGS="${prefix_map}" \
     -DCMAKE_INSTALL_PREFIX="${deps}" -DCMAKE_INSTALL_LIBDIR=lib "$@" > "${bld}.log" 2>&1 ||
     { tail -n 30 "${bld}.log" >&2; exit 1; }
-  cmake --build "${bld}" -j "${jobs}" >> "${bld}.log" 2>&1 || { tail -n 30 "${bld}.log" >&2; exit 1; }
-  cmake --install "${bld}" >> "${bld}.log" 2>&1
+  capped_cmake_build "${bld}" >> "${bld}.log" 2>&1 || { tail -n 30 "${bld}.log" >&2; exit 1; }
+  capped cmake --install "${bld}" >> "${bld}.log" 2>&1
 }
 
 rm -rf "${deps}" "${stage}"
@@ -175,13 +178,14 @@ grep -q 'log_sign_request' "${src}/ssh-agent.c" || { echo "agent-log.patch did n
   LDFLAGS="-L${deps}/lib" \
   LIBS="-lcbor -lcrypto -lz -framework CoreFoundation -framework IOKit" \
   PKG_CONFIG=false \
-  ./configure --prefix="${install_prefix}" --sysconfdir="${install_prefix}/etc/ssh" \
+  capped ./configure --prefix="${install_prefix}" --sysconfdir="${install_prefix}/etc/ssh" \
     --with-ssl-dir="${deps}" --with-security-key-builtin --with-libedit --without-pam \
     > configure.log 2>&1 || { tail -n 30 configure.log >&2; exit 1; }
   grep -q 'Compiler: clang' configure.log || { echo "configure did not pick clang" >&2; exit 1; }
   grep -q 'LibreSSL' configure.log || { echo "configure did not find LibreSSL" >&2; exit 1; }
-  make -j "${jobs}" > make.log 2>&1 || { tail -n 30 make.log >&2; exit 1; }
-  make install-nokeys DESTDIR="${stage}" > install.log 2>&1 || { tail -n 30 install.log >&2; exit 1; }
+  # shellcheck disable=SC2119 # no argument is meant: make's default target
+  capped_make > make.log 2>&1 || { tail -n 30 make.log >&2; exit 1; }
+  capped make install-nokeys DESTDIR="${stage}" > install.log 2>&1 || { tail -n 30 install.log >&2; exit 1; }
 )
 mv "${stage}${install_prefix}"/* "${stage}/"
 rm -rf "${stage:?}/opt"

@@ -371,3 +371,9 @@ binary under its name (Developer ID with the hardened runtime when the release
 lane exports `APPLE_SIGN_IDENTITY`, ad hoc otherwise), and packages. CMake
 comes from aqua; the compiler, the SDK's libedit and zlib are Xcode's; no
 pkg-config is used (libfido2 is pointed at the libraries by directory).
+
+A build does not take the whole machine. Each make and cmake build runs
+`BUILD_JOBS` jobs at once (4 unless set), and each configure, build and
+install step is stopped after `BUILD_TIMEOUT` (30 minutes unless set, as
+`timeout` takes it: `45m`, `2h`). Memory has no cap of its own on macOS; the
+job count is what bounds it.
