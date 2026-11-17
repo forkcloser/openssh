@@ -263,7 +263,7 @@ for kind in plain profile login; do
     [ "${made}" = "${own}" ] || [ ! -e "${made}" ] || { echo "ssh-agent-install (${kind}) created ${made##*/}" >&2; exit 1; }
   done
   HOME="${rc_home}" PATH="${work}/stub:/usr/bin:/bin" "${prefix}/bin/ssh-agent-install" uninstall > /dev/null
-  if grep -q 'org.forkcloser' "${written[@]}"; then
+  if grep -q -e 'org.forkcloser' -e 'forkcloser/openssh' "${written[@]}"; then
     echo "ssh-agent-install uninstall (${kind}) left its line in an rc" >&2
     exit 1
   fi
@@ -324,7 +324,7 @@ for kind in readonly linked; do
   esac
   cksum "${target}" | cmp -s - "${work}/locked.sum" || { echo "ssh-agent-install uninstall (${kind}) changed an rc it cannot write" >&2; exit 1; }
   [ ! -e "${locked}.tmp" ] || { echo "ssh-agent-install uninstall (${kind}) left ${locked##*/}.tmp behind" >&2; exit 1; }
-  ! grep -q 'org.forkcloser' "${rc_home}/.bashrc" || { echo "ssh-agent-install uninstall (${kind}) left its line in an rc it can write" >&2; exit 1; }
+  ! grep -q -e 'org.forkcloser' -e 'forkcloser/openssh' "${rc_home}/.bashrc" || { echo "ssh-agent-install uninstall (${kind}) left its line in an rc it can write" >&2; exit 1; }
 done
 # And the line an rc may be left with that is not harmless: an earlier
 # install's export, in a file that has since been locked. Uninstall says it
@@ -344,6 +344,86 @@ case "${said}" in
   *'does nothing now'*) echo "ssh-agent-install uninstall says a live export does nothing: ${said}" >&2; exit 1 ;;
   *) ;;
 esac
+
+# 6d. What the installer does to an rc it rewrites, an earlier install's
+# export in it beside the user's own lines: the export goes, by uninstall
+# and by an install that replaces it, and every other byte stays, a line
+# that only quotes the export and a line with a NUL byte in it (a key
+# binding) among them. In a home that takes no new file, too: the copy the
+# installer works from is made under TMPDIR, not beside the rc, where
+# failing to make it once emptied the file; and it is gone after the run.
+rc_tmp="${work}/rc-tmp"
+mkdir "${rc_tmp}"
+printf '# mine\n# was: %s\nbindkey "^X\0" x\nalias kept=1\n' "${old_export}" > "${work}/rc.stripped"
+for action in uninstall install; do
+  rc_home="${work}/home-closed-${action}"
+  mkdir -p "${rc_home}/.ssh" "${rc_home}/Library/LaunchAgents" "${rc_home}/Library/Logs/org.forkcloser.ssh_agent"
+  printf '# mine\n%s\n# was: %s\nbindkey "^X\0" x\nalias kept=1\n' "${old_export}" "${old_export}" > "${rc_home}/.zshrc"
+  chmod 0555 "${rc_home}"
+  status=0
+  if [ "${action}" = uninstall ]; then
+    HOME="${rc_home}" TMPDIR="${rc_tmp}" PATH="${work}/stub:/usr/bin:/bin" "${prefix}/bin/ssh-agent-install" uninstall > /dev/null 2> "${work}/install.err" || status=$?
+    cp "${work}/rc.stripped" "${work}/rc.expected"
+  else
+    HOME="${rc_home}" TMPDIR="${rc_tmp}" PATH="${work}/stub:/usr/bin:/bin" "${prefix}/bin/ssh-agent-install" > /dev/null 2> "${work}/install.err" || status=$?
+    { cat "${work}/rc.stripped"; printf '\n# forkcloser/openssh: the agent the LaunchAgent runs\n%s\n' "${by_hand}"; } > "${work}/rc.expected"
+  fi
+  # Open again whatever happened: the trap removes the tree.
+  chmod 0755 "${rc_home}"
+  [ "${status}" -eq 0 ] || { cat "${work}/install.err" >&2; echo "ssh-agent-install ${action} stopped in a home that takes no new file" >&2; exit 1; }
+  cmp -s "${rc_home}/.zshrc" "${work}/rc.expected" || { echo "ssh-agent-install ${action} did not leave an rc it rewrites as it was, less the old export" >&2; exit 1; }
+  [ -z "$(ls -A "${rc_tmp}")" ] || { echo "ssh-agent-install ${action} left its copy of an rc behind" >&2; exit 1; }
+done
+# An rc that holds the export and nothing else: no line is left to keep,
+# which is not a failure.
+for action in uninstall install; do
+  rc_home="${work}/home-alone-${action}"
+  mkdir -p "${rc_home}/.ssh"
+  printf '%s\n' "${old_export}" > "${rc_home}/.zshrc"
+  if [ "${action}" = uninstall ]; then
+    HOME="${rc_home}" TMPDIR="${rc_tmp}" PATH="${work}/stub:/usr/bin:/bin" "${prefix}/bin/ssh-agent-install" uninstall > /dev/null ||
+      { echo "ssh-agent-install uninstall stopped on an rc that holds the old export alone" >&2; exit 1; }
+    [ ! -s "${rc_home}/.zshrc" ] || { echo "ssh-agent-install uninstall left something in an rc that held the old export alone" >&2; exit 1; }
+  else
+    HOME="${rc_home}" TMPDIR="${rc_tmp}" PATH="${work}/stub:/usr/bin:/bin" "${prefix}/bin/ssh-agent-install" > /dev/null ||
+      { echo "ssh-agent-install stopped on an rc that holds the old export alone" >&2; exit 1; }
+    grep -qxF -- "${by_hand}" "${rc_home}/.zshrc" || { echo "ssh-agent-install did not put its line in an rc that held the old export alone" >&2; exit 1; }
+    ! grep -qxF -- "${old_export}" "${rc_home}/.zshrc" || { echo "ssh-agent-install left the old export in an rc that held it alone" >&2; exit 1; }
+  fi
+done
+# The copy cannot be made (a grep that fails as on a full disk; the calls
+# that only look go to the real one): the installer stops, and the rc is
+# as it was.
+mkdir "${work}/stub-grep" "${work}/stub-cat"
+# shellcheck disable=SC2016 # the stub's own arguments, for the stub to expand
+printf '#!/bin/sh\ncase "$1" in -*v*) exit 2 ;; *) exec /usr/bin/grep "$@" ;; esac\n' > "${work}/stub-grep/grep"
+printf '#!/bin/sh\nexit 1\n' > "${work}/stub-cat/cat"
+chmod 0755 "${work}/stub-grep/grep" "${work}/stub-cat/cat"
+rc_home="${work}/home-nocopy"
+mkdir -p "${rc_home}/.ssh"
+printf '# mine\n%s\nalias kept=1\n' "${old_export}" > "${rc_home}/.zshrc"
+cksum "${rc_home}/.zshrc" > "${work}/rc.sum"
+if HOME="${rc_home}" TMPDIR="${rc_tmp}" PATH="${work}/stub-grep:${work}/stub:/usr/bin:/bin" "${prefix}/bin/ssh-agent-install" uninstall > /dev/null 2>&1; then
+  echo "ssh-agent-install uninstall went on without a copy of the rc it rewrites" >&2
+  exit 1
+fi
+cksum "${rc_home}/.zshrc" | cmp -s - "${work}/rc.sum" || { echo "ssh-agent-install uninstall changed an rc it could not copy" >&2; exit 1; }
+[ -z "$(ls -A "${rc_tmp}")" ] || { echo "ssh-agent-install uninstall left a part of a copy behind" >&2; exit 1; }
+# The copy is whole and writing it over the rc fails (a cat that fails; the
+# shell has emptied the rc by then, as a full disk leaves it): the
+# installer stops, and names the copy, which holds what the rc did.
+rc_home="${work}/home-nowrite"
+mkdir -p "${rc_home}/.ssh"
+printf '# mine\n%s\nalias kept=1\n' "${old_export}" > "${rc_home}/.zshrc"
+if HOME="${rc_home}" TMPDIR="${rc_tmp}" PATH="${work}/stub-cat:${work}/stub:/usr/bin:/bin" "${prefix}/bin/ssh-agent-install" uninstall > /dev/null 2> "${work}/install.err"; then
+  echo "ssh-agent-install uninstall passed over a failed write of an rc" >&2
+  exit 1
+fi
+copy="$(find "${rc_tmp}" -type f)"
+[ -n "${copy}" ] || { echo "ssh-agent-install uninstall kept no copy of an rc it failed to write" >&2; exit 1; }
+printf '# mine\nalias kept=1\n' | cmp -s - "${copy}" || { echo "ssh-agent-install uninstall kept no whole copy of an rc it failed to write" >&2; exit 1; }
+grep -qF -- "${copy}" "${work}/install.err" || { cat "${work}/install.err" >&2; echo "ssh-agent-install uninstall did not name the copy of the rc it failed to write" >&2; exit 1; }
+rm -f "${copy}"
 
 # 7. The server, as this user, on an ephemeral port: the shipped sshd_config
 # is read from the package (no -f: the relocated default), the config test

@@ -44,10 +44,27 @@ done
 
 # strip_lines <rc>: the lines the install writes, and only those, taken
 # out; written through, so an rc that is a symlink into a dotfiles tree
-# stays one.
+# stays one. The copy is made outside the home, which may take no new file,
+# and the rc is touched only once the copy is whole: grep exits 1 when no
+# line is left to keep, and anything above that is a failure. -a, or a
+# grep that takes the rc for binary (a NUL byte in a key binding) prints
+# one line about it, exits 0, and that line becomes the rc. Writing through
+# empties the rc first, so a write that fails leaves the copy and says
+# where it is.
 strip_lines() {
-  grep -vxF -e "${rc_mark}" -e "${rc_line}" -e "${old_line}" "$1" > "$1.tmp" || true
-  cat "$1.tmp" > "$1" && rm -f "$1.tmp"
+  local copy status=0
+  copy="$(mktemp "${TMPDIR:-/tmp}/ssh-agent-install.XXXXXX")"
+  grep -avxF -e "${rc_mark}" -e "${rc_line}" -e "${old_line}" -- "$1" > "${copy}" || status=$?
+  if [ "${status}" -gt 1 ]; then
+    rm -f "${copy}"
+    echo "ssh-agent-install: could not copy $1, left as it is" >&2
+    return 1
+  fi
+  if ! cat "${copy}" > "$1"; then
+    echo "ssh-agent-install: writing $1 failed; what it held, without the agent line, is in ${copy}: move it somewhere that is kept" >&2
+    return 1
+  fi
+  rm -f "${copy}"
 }
 
 # can_write <rc>: whether its lines can be put in or taken out. Not an rc
