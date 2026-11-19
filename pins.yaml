@@ -45,13 +45,13 @@ pins:
       sha256: c1012c8871d71b65872fd5ff1a9d6b0838a55683a03e85ba97479ce57129c736
   - name: libcbor
     renovate: github-tags PJK/libcbor
-    version: v0.14.1
+    version: v0.15.0
     url: https://github.com/PJK/libcbor/archive/refs/tags/${version}.tar.gz
     verify: download
     digest:
-      version: v0.14.1
-      source: 1f9df3b82ad67c735101da76c7185e74c30fc4bb15ec9af126d7bf5e47baf664
-      sha256: a8f3aa5c75a4e1e2c639a4928036a3a53fd1682037033db0964935965bd5f5da
+      version: v0.15.0
+      source: 9f38b4fbd12f08ebf5d15b9aa19187f60f432b2f5b50eae4589898ef16d273e4
+      sha256: c94145d3c22e67cff9a3325dc036b4545a49a42231553995be4947d52cf2ef57
   - name: libressl
     renovate: github-releases libressl/portable
     extract-version: ^v(?<version>\d+\.\d+\.\d+)$
