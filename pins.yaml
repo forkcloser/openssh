@@ -45,7 +45,7 @@ pins:
       sha256: c1012c8871d71b65872fd5ff1a9d6b0838a55683a03e85ba97479ce57129c736
   - name: libcbor
     renovate: github-tags PJK/libcbor
-    version: v0.14.1
+    version: v0.15.0
     url: https://github.com/PJK/libcbor/archive/refs/tags/${version}.tar.gz
     verify: download
     digest:
