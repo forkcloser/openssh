@@ -294,6 +294,12 @@ What that means:
   no password, no keyboard-interactive (`etc/ssh/sshd_config`, the hardened
   set with the client's algorithm lists). No privilege separation user or
   chroot is needed below root.
+- **Nothing is forwarded.** A session is a shell or sftp. The server refuses
+  a client's `-L` and `-R` (a TCP port or a unix socket), `-D`, `-A`, `-X`
+  and `-w`. That is this package's choice (`DisableForwarding yes` in
+  `etc/ssh/sshd_config`), not upstream's default, which allows TCP,
+  unix-socket and agent forwarding. The server reads that one file, which
+  has no `Include`, so there is no supported override.
 - **Port 22, no sudo.** macOS lets a user bind port 22 on the any-address
   (`0.0.0.0` and `::`), and refuses a specific address; the shipped config
   binds the any-address for that reason.
