@@ -156,10 +156,6 @@ gh attestation verify openssh_<version>_darwin_arm64.tar.gz --repo packcloser/op
   --signer-workflow farcloser/limen/.github/workflows/limen-release-apple.yaml
 ```
 
-Releases up to `v10.6.2.1` were cut when this repository was
-`forkcloser/openssh` and name it as the calling repository: for those, name
-`forkcloser/openssh` in the command above and in the one below.
-
 The keyless signature over `checksums.txt`, for a verifier with cosign and
 no `gh`; the identity is the lane at the commit the release called, the
 calling repository is an extension of the certificate:
