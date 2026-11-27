@@ -100,9 +100,9 @@ Through aqua, as a `github_release` package. The reference registry entry:
 
 ```yaml
 - type: github_release
-  repo_owner: forkcloser
+  repo_owner: packcloser
   repo_name: openssh
-  description: OpenSSH with security keys built in, relocatable, darwin/arm64 (forkcloser/openssh)
+  description: OpenSSH with security keys built in, relocatable, darwin/arm64 (packcloser/openssh)
   asset: openssh_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
   format: tar.gz
   files:
@@ -152,9 +152,13 @@ attestation verify` needs the signer named; with `--repo` alone it fails.
 The same command covers the archive, its SBOM and `checksums.txt`:
 
 ```sh
-gh attestation verify openssh_<version>_darwin_arm64.tar.gz --repo forkcloser/openssh \
+gh attestation verify openssh_<version>_darwin_arm64.tar.gz --repo packcloser/openssh \
   --signer-workflow farcloser/limen/.github/workflows/limen-release-apple.yaml
 ```
+
+Releases up to `v10.6.2.1` were cut when this repository was
+`forkcloser/openssh` and name it as the calling repository: for those, name
+`forkcloser/openssh` in the command above and in the one below.
 
 The keyless signature over `checksums.txt`, for a verifier with cosign and
 no `gh`; the identity is the lane at the commit the release called, the
@@ -164,7 +168,7 @@ calling repository is an extension of the certificate:
 cosign verify-blob checksums.txt --bundle checksums.txt.sigstore.json \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-identity-regexp '^https://github.com/farcloser/limen/\.github/workflows/limen-release-apple\.yaml@' \
-  --certificate-github-workflow-repository forkcloser/openssh
+  --certificate-github-workflow-repository packcloser/openssh
 sha256sum -c checksums.txt
 ```
 
