@@ -14,7 +14,7 @@
     "packageRules, custom.openssh: no cooldown, and that is a protection given up. The CDN's directory index carries no release date, and Renovate never holds a release without one to be past minimumReleaseAge: with the cooldown, the bump stays pending for ever and no pull request is opened. Without it, the days in which a release its own project published and signed is found to be bad are gone; the signature pins.yaml holds the tarball to (pgp-detached) says who published it, not that it is sound. What stands in their place: the approval the pull request waits on, which reads what changed upstream, and a build that is red until the patches are re-read against the new sources."
   ],
   "extends": [
-    "local>forkcloser/openssh//.limen/renovate"
+    "local>packcloser/openssh//.limen/renovate"
   ],
   "forkProcessing": "enabled",
   "gitIgnoredAuthors": [

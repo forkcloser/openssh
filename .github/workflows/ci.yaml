@@ -1,5 +1,5 @@
 # openssh CI (project-specific — this repo builds a C package for macOS, so
-# it diverges from the canonical baseline ci.yaml the way forkcloser/curl
+# it diverges from the canonical baseline ci.yaml the way packcloser/curl
 # does). Construction rules are the same: GitHub's own actions pinned by
 # commit SHA; everything else is pinned, checksum-verified shell via hermetic +
 # just.
